@@ -4,16 +4,24 @@ const BUY = /\b(link|where (can|do|did) (i|you|u) (get|buy|find|order)|where.*(g
 const RED = /\b(scam|fake|broke|broken|cheap(ly)?|waste|returned|refund|don'?t buy|didn'?t work|doesn'?t work|stopped working|garbage|trash|ripoff|rip off|ai generated|is this ai|dangerous|never (came|arrived))\b/i;
 const BAIT = /\b(giveaway|comment (win|yes|me|below)|tag (a|your|3)|follow (me|back)|f4f|check my (page|bio)|dm me)\b/i;
 const NON_LATIN = /[Ѐ-ӿ؀-ۿऀ-ॿ฀-๿぀-ヿ一-鿿가-힯]/;
-const FOREIGN_WORDS = /\b(que|muy|quiero|donde|cuanto|precio|amigo|hermoso|obrigad[oa]|quero|onde|preço|bonito|ich|nicht|wie|sehr|merci|très|combien|bhai|kitne|kitna|rupees?|₹|pesos?|reais|r\$|ship to (india|philippines|manila|nigeria|pakistan|brazil|uk|canada|australia))\b/i;
+const FOREIGN_WORDS = /\b(comenta|enlace|envío|envio|necesitas|productos|compras|hola|gracias|que|muy|quiero|donde|cuanto|precio|amigo|hermoso|obrigad[oa]|quero|onde|preço|bonito|ich|nicht|wie|sehr|merci|très|combien|bhai|kitne|kitna|rupees?|₹|pesos?|reais|r\$|ship to (india|philippines|manila|nigeria|pakistan|brazil|uk|canada|australia))\b/i;
 const US_HINT = /\b(usa|u\.s\.|america|texas|florida|california|new york|ohio|georgia|walmart|target|amazon|costco|y'?all|bro|fr|ngl|lowkey|bestie)\b/i;
 
-function classifyComments(comments) {
+// "Comment LINK and I'll DM you" style captions - returns the keyword or null
+function captionBait(caption) {
+  const c = String(caption || '');
+  const m = c.match(/\b(?:comment|comenta|commente|kommentiere|type|drop)\s*(?:the word\s*)?["“'‘]?([A-Za-z0-9]{2,15}|[\u{1F300}-\u{1FAFF}])["”'’]?\s*(?:below\s*)?(?:and|&|\+|to|for|y|if)\b/iu)
+    || c.match(/\b(?:comment|comenta)\s*["“']([^"”']{2,15})["”']/i);
+  return m ? m[1].trim() : null;
+}
+
+function classifyComments(comments, baitWord = null) {
   const list = (comments || []).map(c => String(c || '').trim()).filter(Boolean);
   if (!list.length) return null;
   let buy = 0, red = 0, bait = 0, hype = 0, us = 0;
   const buyQuotes = [];
   for (const c of list) {
-    const isBait = BAIT.test(c), isRed = RED.test(c), isBuy = !isBait && BUY.test(c);
+    const isBait = BAIT.test(c) || (baitWord && c.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase() === baitWord.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase()), isRed = RED.test(c), isBuy = !isBait && BUY.test(c);
     if (isBait) bait++;
     else if (isRed) red++;
     else if (isBuy) { buy++; if (buyQuotes.length < 3 && c.length < 70) buyQuotes.push(c); }
@@ -82,4 +90,4 @@ function keywords(text) {
   return new Set(String(text || '').toLowerCase().replace(/[#@]/g, ' ').match(/[a-z]{4,}/g)?.filter(w => !STOP.has(w)) || []);
 }
 
-module.exports = { classifyComments, captionLooksUS, detectNiche, seasonal, productName, keywords };
+module.exports = { captionBait, classifyComments, captionLooksUS, detectNiche, seasonal, productName, keywords };

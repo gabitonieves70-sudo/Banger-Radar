@@ -61,8 +61,10 @@ function analyze(v, now = Date.now()) {
   // ---- Score parts (each 0..1) ----
   const parts = {};
   parts.buyIntent = clamp(v.comments_breakdown.buyIntent / 0.4);
+  // "Comment LINK and I'll DM you" captions pump comments - count them at 40%
+  const bf = v.captionBait ? 0.4 : 1;
   parts.engagement =
-    (clamp(likeRate / 0.1) + clamp(commentRate / 0.02) + clamp(commentsPerLike / 0.2) + clamp(shareRate / 0.01)) / 4;
+    (clamp(likeRate / 0.1) + clamp(commentRate * bf / 0.02) + clamp(commentsPerLike * bf / 0.2) + clamp(shareRate / 0.01)) / 4;
   parts.velocity = clamp(viewsPerHour / 3000);
   const ageBoost = pageAgeDays <= 2 ? 1 : pageAgeDays <= 5 ? 0.8 : pageAgeDays <= 7 ? 0.5 : 0;
   parts.newAccount = outlier == null

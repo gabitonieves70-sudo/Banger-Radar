@@ -7,6 +7,8 @@
 //   PER_QUERY         videos per search per platform (default 15)
 //   MAX_CHECKS        how many top videos get the deep page-age + comment check (default 12)
 //   SCAN_EVERY_HOURS  auto-scan interval (default 24)
+//   TIKTOK_QUERIES    how many of the searches also run on TikTok (default 4 - TikTok costs more)
+//   TIKTOK_PER_QUERY  TikToks per search (default 10)
 
 const { runActor } = require('./apify');
 const T = require('./textcheck');
@@ -23,15 +25,20 @@ function config() {
     queries: q.length ? q : DEFAULT_QUERIES,
     perQuery: +process.env.PER_QUERY || 15,
     maxChecks: +process.env.MAX_CHECKS || 12,
-    everyHours: +process.env.SCAN_EVERY_HOURS || 24
+    everyHours: +process.env.SCAN_EVERY_HOURS || 24,
+    tiktokQueries: +process.env.TIKTOK_QUERIES || 4,
+    tiktokPerQuery: +process.env.TIKTOK_PER_QUERY || 10
   };
 }
 
 const num = v => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
 
+const shortcode = u => (String(u || '').match(/\/(?:p|reel|reels|tv)\/([\w-]+)/) || [])[1] || null;
+
 function fromInstagram(i) {
   const views = num(i.videoPlayCount) || num(i.igPlayCount) || num(i.videoViewCount);
   return {
+    viewsHidden: !views,
     platform: 'instagram',
     id: 'ig_' + (i.id || i.shortCode || i.url),
     url: i.url || (i.shortCode ? `https://www.instagram.com/reel/${i.shortCode}/` : ''),
@@ -39,7 +46,7 @@ function fromInstagram(i) {
     caption: i.caption || '',
     postedAt: i.timestamp,
     views, likes: num(i.likesCount), comments: num(i.commentsCount), shares: num(i.sharesCount),
-    commentTexts: (i.latestComments || []).map(c => (typeof c === 'string' ? c : c?.text)).filter(Boolean),
+    commentTexts: [...(i.latestComments || []).map(c => (typeof c === 'string' ? c : c?.text)), i.firstComment].filter(Boolean),
     followers: null, posts: null
   };
 }
@@ -48,6 +55,7 @@ function fromTikTok(i) {
   const a = i.authorMeta || {};
   return {
     platform: 'tiktok',
+    viewsHidden: false,
     id: 'tt_' + (i.id || i.webVideoUrl),
     url: i.webVideoUrl || '',
     handle: a.name || 'unknown',
@@ -71,11 +79,12 @@ async function scan() {
   // ---- 1. Pull this week's videos ----
   const [igRaw, ttRaw] = await Promise.all([
     settle('Instagram search', runActor('apify/instagram-hashtag-scraper', {
-      hashtags: cfg.queries, keywordSearch: true, resultsType: 'reels', resultsLimit: cfg.perQuery
+      hashtags: cfg.queries.map(q => q.replace(/[^\w]/g, '').toLowerCase()), keywordSearch: false,
+      resultsType: 'reels', resultsLimit: cfg.perQuery
     }), log),
     settle('TikTok search', runActor('clockworks/tiktok-scraper', {
-      searchQueries: cfg.queries, searchSection: '/video', videoSearchDateFilter: 'PAST_WEEK',
-      resultsPerPage: cfg.perQuery, proxyCountryCode: 'US',
+      searchQueries: cfg.queries.slice(0, cfg.tiktokQueries), searchSection: '/video', videoSearchDateFilter: 'PAST_WEEK',
+      resultsPerPage: cfg.tiktokPerQuery, proxyCountryCode: 'US',
       shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadAvatars: false,
       shouldDownloadMusicCovers: false, shouldDownloadSlideshowImages: false
     }), log)
@@ -90,8 +99,12 @@ async function scan() {
   // ---- 2. Engagement + freshness pre-filter ----
   const fresh = all.filter(v => {
     const t = new Date(v.postedAt).getTime();
-    return t && now - t <= 7 * DAY && v.views >= 10000 && v.comments / v.views >= 0.005;
+    if (!t || now - t > 7 * DAY) return false;
+    if (v.viewsHidden) return v.likes >= 1000 && v.comments / Math.max(1, v.likes) >= 0.03;
+    return v.views >= 10000 && v.comments / v.views >= 0.005;
   });
+  // Views hidden on some IG posts: estimate from likes (~8% like rate) so the math works
+  for (const v of fresh) if (v.viewsHidden) v.views = Math.round(v.likes / 0.08);
 
   // one video per page (its best one), ranked by comment strength
   const bestByPage = new Map();
@@ -112,7 +125,8 @@ async function scan() {
   const ttNames = [...new Set(finalists.filter(v => v.platform === 'tiktok').map(v => v.handle))];
   const ttUrls = finalists.filter(v => v.platform === 'tiktok').map(v => v.url);
 
-  const [igProfiles, ttOldest, ttComments] = await Promise.all([
+  const igUrls = finalists.filter(v => v.platform === 'instagram').map(v => v.url);
+  const [igProfiles, ttOldest, ttComments, igComments] = await Promise.all([
     igNames.length ? settle('Instagram page check', runActor('apify/instagram-profile-scraper', { usernames: igNames }), log) : [],
     ttNames.length ? settle('TikTok page check', runActor('clockworks/tiktok-scraper', {
       profiles: ttNames, profileSorting: 'oldest', resultsPerPage: 1, excludePinnedPosts: false,
@@ -120,8 +134,18 @@ async function scan() {
     }), log) : [],
     ttUrls.length ? settle('TikTok comments', runActor('clockworks/tiktok-comments-scraper', {
       postURLs: ttUrls, commentsPerPost: 30
+    }), log) : [],
+    igUrls.length ? settle('Instagram comments', runActor('apify/instagram-comment-scraper', {
+      directUrls: igUrls, resultsLimit: 30
     }), log) : []
   ]);
+  const igCom = new Map();
+  for (const c of igComments) {
+    const code = shortcode(c.postUrl || c.inputUrl || c.url);
+    if (!code || !c.text) continue;
+    if (!igCom.has(code)) igCom.set(code, []);
+    igCom.get(code).push(c.text);
+  }
 
   const igMap = new Map(igProfiles.map(p => [String(p.username || '').toLowerCase(), p]));
   const ttOld = new Map();
@@ -172,8 +196,11 @@ async function scan() {
     }
 
     // Comments
-    const texts = v.platform === 'tiktok' ? (ttCom.get(v.url) || []) : v.commentTexts;
-    let cb = T.classifyComments(texts);
+    const texts = v.platform === 'tiktok' ? (ttCom.get(v.url) || []) : [...(igCom.get(shortcode(v.url)) || []), ...v.commentTexts];
+    const baitWord = T.captionBait(v.caption);
+    if (baitWord) notes.push(`Caption says "comment ${baitWord}" to get a link, so the comment count is pumped up. Scored with that in mind.`);
+    if (v.viewsHidden) notes.push('Views are hidden on this post, so they are estimated from likes');
+    let cb = T.classifyComments(texts, baitWord);
     if (!cb) {
       const us = T.captionLooksUS(v.caption);
       cb = { buyIntent: Math.min(0.35, (v.comments / Math.max(1, v.likes)) * 1.2), hype: 0.3, redFlag: 0, bait: 0,
@@ -222,6 +249,8 @@ async function scan() {
       price: null,
       saturation: { copycatPages: copy, usAds: 0, adDays: 0, adsChecked: false },
       wowFactor: null,
+      captionBait: baitWord,
+      viewsEstimated: !!v.viewsHidden,
       notes
     });
   }

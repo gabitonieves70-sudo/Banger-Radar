@@ -23,8 +23,13 @@ async function runScan(reason) {
   console.log(`[scan] starting (${reason})`);
   try {
     const result = await scan();
-    state.last = result;
     if (result.errors.length) state.lastError = result.errors.join(' | ');
+    // Never replace good results with an empty/failed scan
+    if (!result.records.length && state.last?.records?.length) {
+      state.lastError = 'Last scan found nothing new' + (state.lastError ? ': ' + state.lastError : '') + ' - still showing the previous results.';
+      return;
+    }
+    state.last = result;
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CACHE, JSON.stringify(result));
     kvSet('latest', result).catch(e => console.error('[scan] could not save to Apify store', e.message));

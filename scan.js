@@ -13,7 +13,7 @@
 //   MIN_VIEWS         minimum views to count (default 10000)
 //   MIN_COMMENT_RATE_PCT  minimum comments as % of views to get a deep check (default 0.1)
 
-const { runActor } = require('./apify');
+const { runActor, resetCreditFlag, isOutOfCredit } = require('./apify');
 const T = require('./textcheck');
 const AI = require('./ai');
 
@@ -95,6 +95,7 @@ async function scan() {
   const cfg = config();
   const now = Date.now();
   const log = [];
+  resetCreditFlag();
 
   // ---- 1. Pull this week's videos ----
   const [igRaw, ttRaw] = await Promise.all([
@@ -329,8 +330,8 @@ async function scan() {
 
   return {
     scannedAt: new Date(now).toISOString(),
-    stats: { instagramOn: cfg.instagram, notProducts: notProducts.length, ai: AI.enabled(), pulled: all.length, instagram: igRaw.length, tiktok: ttRaw.length, passedEngagement: fresh.length, deepChecked: finalists.length },
-    errors: log,
+    stats: { outOfCredit: isOutOfCredit(), instagramOn: cfg.instagram, notProducts: notProducts.length, ai: AI.enabled(), pulled: all.length, instagram: igRaw.length, tiktok: ttRaw.length, passedEngagement: fresh.length, deepChecked: finalists.length },
+    errors: isOutOfCredit() ? ['Apify free credit is used up for this month, so this scan reused videos Apify already collected (no new videos). Upgrade Apify or wait for the monthly reset for fresh scans.', ...log.filter(l => !/402/.test(l))] : log,
     records
   };
 }

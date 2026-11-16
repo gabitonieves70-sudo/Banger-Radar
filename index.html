@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Banger Radar</title>
+<meta name="theme-color" content="#07090d">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+<style>
+  :root{
+    --bg:#07090d; --panel:#10141c; --panel2:#161b26; --line:#232a38; --text:#eef2f8; --dim:#8a94a8;
+    --hot:#ff5a1f; --hot2:#ffb020; --good:#22d37f; --warn:#ffc53d; --bad:#ff4d6a; --blue:#4da3ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;padding-bottom:40px}
+  a{color:inherit}
+  header{position:sticky;top:0;z-index:10;background:rgba(7,9,13,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:14px 16px 10px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle,var(--hot) 0 18%,transparent 19%),repeating-radial-gradient(circle,transparent 0 6px,rgba(255,90,31,.35) 6px 7px);border:1px solid rgba(255,90,31,.5);position:relative;overflow:hidden}
+  .logo::after{content:"";position:absolute;inset:0;background:conic-gradient(from 0deg,rgba(255,176,32,.55),transparent 25%);animation:spin 2.4s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:20px;letter-spacing:.3px}
+  h1 span{color:var(--hot)}
+  .sub{color:var(--dim);font-size:12px}
+  .banner{margin:12px 16px 0;padding:10px 12px;border-radius:12px;background:rgba(77,163,255,.1);border:1px solid rgba(77,163,255,.3);color:#b9d9ff;font-size:13px}
+  .filters{padding:12px 16px 4px;display:flex;flex-direction:column;gap:10px}
+  .row{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}
+  .row::-webkit-scrollbar{display:none}
+  .chip{flex:none;border:1px solid var(--line);background:var(--panel);color:var(--dim);padding:7px 12px;border-radius:999px;font-size:13px;cursor:pointer;user-select:none}
+  .chip.on{background:var(--hot);border-color:var(--hot);color:#fff;font-weight:600}
+  .ctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--dim)}
+  select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:13px}
+  input[type=range]{accent-color:var(--hot);width:120px}
+  .toggle{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .toggle input{accent-color:var(--hot);width:16px;height:16px}
+  .summary{padding:6px 16px 10px;color:var(--dim);font-size:13px}
+  .summary b{color:var(--text)}
+  .feed{display:grid;gap:14px;padding:0 16px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .card.banger{border-color:rgba(255,90,31,.55);box-shadow:0 0 0 1px rgba(255,90,31,.15),0 8px 30px -12px rgba(255,90,31,.45)}
+  .card.filtered{opacity:.6;border-style:dashed}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .score{display:flex;align-items:center;gap:8px}
+  .ring{--p:0;width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--c) calc(var(--p)*1%),#232a38 0);flex:none}
+  .ring b{width:44px;height:44px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-size:16px}
+  .tier{font-size:12px;font-weight:700;letter-spacing:.6px}
+  .watch{background:var(--text);color:#000;text-decoration:none;font-weight:700;font-size:13px;padding:8px 12px;border-radius:10px;white-space:nowrap}
+  .pname{font-size:17px;font-weight:700}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:12.5px;color:var(--dim)}
+  .pill{background:var(--panel2);border:1px solid var(--line);padding:3px 8px;border-radius:8px;color:var(--text)}
+  .pill.new{background:rgba(34,211,127,.12);border-color:rgba(34,211,127,.4);color:var(--good)}
+  .pill.fresh{background:rgba(34,211,127,.12);border-color:rgba(34,211,127,.4);color:var(--good)}
+  .pill.warm{background:rgba(255,197,61,.12);border-color:rgba(255,197,61,.4);color:var(--warn)}
+  .pill.saturated{background:rgba(255,77,106,.12);border-color:rgba(255,77,106,.4);color:var(--bad)}
+  .pill.us{background:rgba(77,163,255,.12);border-color:rgba(77,163,255,.4);color:var(--blue)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .stat{background:var(--panel2);border-radius:10px;padding:7px 6px;text-align:center}
+  .stat .n{font-weight:700;font-size:14px}
+  .stat .l{font-size:11px;color:var(--dim)}
+  .line{font-size:13px;color:var(--dim)}
+  .line b{color:var(--text)}
+  .intent{background:var(--panel2);border-radius:12px;padding:9px 10px;font-size:13px}
+  .bar{height:7px;border-radius:5px;background:#232a38;overflow:hidden;display:flex;margin:6px 0}
+  .bar i{display:block;height:100%}
+  .quotes{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+  .q{font-size:12px;background:#0c0f15;border:1px solid var(--line);padding:3px 8px;border-radius:8px;color:#cfd6e4}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px}
+  .kv span:nth-child(odd){color:var(--dim)}
+  .fails{background:rgba(255,77,106,.08);border:1px solid rgba(255,77,106,.35);border-radius:10px;padding:8px 10px;font-size:13px;color:#ffb3c0}
+  details summary{cursor:pointer;color:var(--dim);font-size:12.5px}
+  .parts{display:grid;gap:4px;margin-top:6px;font-size:12px}
+  .parts div{display:grid;grid-template-columns:105px 1fr 34px;gap:8px;align-items:center}
+  .pb{height:6px;border-radius:4px;background:#232a38;overflow:hidden}
+  .pb i{display:block;height:100%;background:linear-gradient(90deg,var(--hot),var(--hot2))}
+  .actions{display:flex;gap:8px}
+  .btn{flex:1;text-align:center;border:1px solid var(--line);background:var(--panel2);color:var(--dim);border-radius:10px;padding:8px;font-size:12.5px;cursor:not-allowed}
+  .empty{color:var(--dim);text-align:center;padding:40px 16px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo"></div>
+    <div>
+      <h1>Banger <span>Radar</span></h1>
+      <div class="sub">Fresh pages · Not saturated · 100% US</div>
+    </div>
+  </div>
+</header>
+
+<div class="banner" id="banner">🧪 Showing <b>sample data</b> so you can test the site. Real Instagram, Facebook &amp; TikTok videos come in once scraping is connected.</div>
+
+<div class="filters">
+  <div class="row" id="time">
+    <div class="chip" data-v="24">Today</div>
+    <div class="chip" data-v="72">3 days</div>
+    <div class="chip on" data-v="168">This week</div>
+  </div>
+  <div class="row" id="platform">
+    <div class="chip on" data-v="all">All</div>
+    <div class="chip" data-v="instagram">📸 Instagram</div>
+    <div class="chip" data-v="facebook">📘 Facebook</div>
+    <div class="chip" data-v="tiktok">🎵 TikTok</div>
+  </div>
+  <div class="ctrl">
+    <select id="niche"><option value="all">All niches</option></select>
+    <select id="sort">
+      <option value="score">Sort: Banger %</option>
+      <option value="velocity">Sort: Views/hr</option>
+      <option value="comments">Sort: Most comments</option>
+      <option value="newest">Sort: Newest</option>
+      <option value="pageAge">Sort: Newest page</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <label>Min Banger <b id="minLbl">0%</b></label>
+    <input type="range" id="min" min="0" max="95" step="5" value="0">
+  </div>
+  <div class="ctrl">
+    <label class="toggle"><input type="checkbox" id="newOnly"> Pages ≤ 2 days only</label>
+    <label class="toggle"><input type="checkbox" id="showFiltered"> Show filtered out</label>
+  </div>
+</div>
+
+<div class="summary" id="summary">Loading…</div>
+<div class="feed" id="feed"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = { hours: 168, platform: 'all', niche: 'all', sort: 'score', min: 0, newOnly: false, showFiltered: false };
+let DATA = [];
+
+const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,'')+'M' : n >= 1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,'')+'K' : String(Math.round(n));
+const pct = (x, d=1) => (x*100).toFixed(d).replace(/\.0$/,'') + '%';
+const ago = h => h < 1 ? Math.round(h*60)+' min ago' : h < 48 ? Math.round(h)+' hrs ago' : Math.round(h/24)+' days ago';
+const days = d => d < 1 ? 'under 1 day' : Math.floor(d) + (Math.floor(d) === 1 ? ' day' : ' days');
+const PLAT = { instagram: '📸 Instagram Reel', facebook: '📘 Facebook Reel', tiktok: '🎵 TikTok' };
+const TIER = { banger: ['🔥 BANGER', 'var(--hot)'], test: ['👀 WORTH TESTING', 'var(--warn)'], skip: ['SKIP', 'var(--dim)'] };
+const PART_NAMES = { buyIntent: 'Buy intent', engagement: 'Engagement', velocity: 'Velocity', newAccount: 'New page boost', saturation: 'Low saturation', margin: 'Margin', wow: 'Wow factor' };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function chips(id, key, parse = v => v) {
+  $(id).addEventListener('click', e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    $(id).querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
+    state[key] = parse(c.dataset.v); render();
+  });
+}
+chips('#time', 'hours', Number);
+chips('#platform', 'platform');
+$('#niche').onchange = e => { state.niche = e.target.value; render(); };
+$('#sort').onchange = e => { state.sort = e.target.value; render(); };
+$('#min').oninput = e => { state.min = +e.target.value; $('#minLbl').textContent = state.min + '%'; render(); };
+$('#newOnly').onchange = e => { state.newOnly = e.target.checked; render(); };
+$('#showFiltered').onchange = e => { state.showFiltered = e.target.checked; render(); };
+
+function card(v) {
+  const s = v.stats, cb = v.comments_breakdown, [tierTxt, tierColor] = TIER[v.tier];
+  const posted = new Date(v.postedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const oldest = new Date(v.account.oldestPostAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const isNew = s.pageAgeDays <= 7;
+  const other = Math.max(0, 1 - cb.buyIntent - cb.hype - cb.redFlag - cb.bait);
+  const parts = Object.entries(v.parts).map(([k, x]) =>
+    `<div><span>${PART_NAMES[k]}</span><span class="pb"><i style="width:${Math.round(x*100)}%"></i></span><span>${Math.round(x*100)}</span></div>`).join('');
+
+  return `<article class="card ${v.passed && v.tier === 'banger' ? 'banger' : ''} ${v.passed ? '' : 'filtered'}">
+    <div class="top">
+      <div class="score">
+        <div class="ring" style="--p:${v.score};--c:${tierColor}"><b>${v.score}</b></div>
+        <div><div class="tier" style="color:${tierColor}">${v.passed ? tierTxt : '❌ FILTERED OUT'}</div><div class="pname">${esc(v.product)}</div></div>
+      </div>
+      <a class="watch" href="${esc(v.url)}" target="_blank" rel="noopener">▶ Watch</a>
+    </div>
+
+    ${v.passed ? '' : `<div class="fails">${v.fails.map(f => '• ' + esc(f)).join('<br>')}</div>`}
+
+    <div class="meta">
+      <span class="pill">${PLAT[v.platform]}</span>
+      <span class="pill">🕒 ${ago(s.hoursSincePost)} · ${posted}</span>
+    </div>
+    <div class="meta">
+      <span class="pill">👤 @${esc(v.account.handle)}</span>
+      <span class="pill ${isNew ? 'new' : 'saturated'}">${isNew ? '🆕 ' : ''}Page age: ${days(s.pageAgeDays)} (oldest post ${oldest})</span>
+      <span class="pill">${fmt(v.account.followers)} followers · ${v.account.posts} posts</span>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="n">${fmt(v.views)}</div><div class="l">👁 views</div></div>
+      <div class="stat"><div class="n">${fmt(v.likes)}</div><div class="l">❤️ ${pct(s.likeRate)}</div></div>
+      <div class="stat"><div class="n">${fmt(v.comments)}</div><div class="l">💬 ${pct(s.commentRate)}</div></div>
+      <div class="stat"><div class="n">${fmt(v.shares)}</div><div class="l">🔁 shares</div></div>
+    </div>
+    <div class="line">⚡ <b>${fmt(s.viewsPerHour)} views/hr</b> · <b>${s.outlier.toFixed(0)}x</b> this page's average · <b>${s.viewsPerFollower.toFixed(0)}x</b> its followers · comments/likes <b>${pct(s.commentsPerLike,0)}</b></div>
+
+    <div class="intent">
+      🛒 <b>Buy intent: ${pct(cb.buyIntent,0)}</b> of comments · ⚠️ red flags ${pct(cb.redFlag,0)}
+      <div class="bar">
+        <i style="width:${cb.buyIntent*100}%;background:var(--good)"></i>
+        <i style="width:${cb.hype*100}%;background:var(--blue)"></i>
+        <i style="width:${cb.redFlag*100}%;background:var(--bad)"></i>
+        <i style="width:${cb.bait*100}%;background:#8a63ff"></i>
+        <i style="width:${other*100}%;background:#3a4252"></i>
+      </div>
+      <div class="quotes">${cb.quotes.map(q => `<span class="q">"${esc(q)}"</span>`).join('')}</div>
+    </div>
+
+    <div class="meta">
+      <span class="pill ${v.saturationLabel.key}">${v.saturationLabel.key === 'fresh' ? '🟢' : v.saturationLabel.key === 'warm' ? '🟡' : '🔴'} ${v.saturationLabel.label}: ${v.saturation.copycatPages} copycat pages · ${v.saturation.usAds} US ads${v.saturation.usAds ? ' (' + v.saturation.adDays + ' days)' : ''}</span>
+      <span class="pill us">🇺🇸 US audience: ${pct(cb.usShare,0)}</span>
+    </div>
+
+    <div class="kv">
+      <span>🏷 Niche</span><span>${v.niche.map(esc).join(' › ')}</span>
+      <span>🎯 Who buys</span><span>${esc(v.audience.who)}</span>
+      <span>👥 Age / lean</span><span>${esc(v.audience.age)} · ${esc(v.audience.lean)}</span>
+      <span>💡 Why they buy</span><span>${esc(v.audience.why)}</span>
+      <span>📅 Season</span><span>${esc(v.seasonal)}</span>
+      <span>💰 Price</span><span>Cost $${v.price.costLow}–${v.price.costHigh} → sell $${v.price.sell} · <b>${pct(s.margin,0)} margin</b></span>
+    </div>
+
+    <details><summary>How the ${v.score}% was scored</summary><div class="parts">${parts}</div></details>
+
+    <div class="actions">
+      <span class="btn" title="Coming soon">✨ Find variants</span>
+      <span class="btn" title="Coming soon">🎬 Content kit</span>
+      <span class="btn" title="Coming soon">⭐ Save</span>
+    </div>
+  </article>`;
+}
+
+function render() {
+  const inTime = DATA.filter(v => v.stats.hoursSincePost <= state.hours);
+  const passed = inTime.filter(v => v.passed).length;
+  const filteredOut = inTime.length - passed;
+
+  let list = inTime.filter(v =>
+    (state.showFiltered || v.passed) &&
+    (state.platform === 'all' || v.platform === state.platform) &&
+    (state.niche === 'all' || v.niche[0] === state.niche) &&
+    v.score >= state.min &&
+    (!state.newOnly || v.stats.pageAgeDays <= 2)
+  );
+  const by = {
+    score: (a, b) => b.score - a.score,
+    velocity: (a, b) => b.stats.viewsPerHour - a.stats.viewsPerHour,
+    comments: (a, b) => b.comments - a.comments,
+    newest: (a, b) => a.stats.hoursSincePost - b.stats.hoursSincePost,
+    pageAge: (a, b) => a.stats.pageAgeDays - b.stats.pageAgeDays
+  }[state.sort];
+  list.sort((a, b) => (b.passed - a.passed) || by(a, b));
+
+  $('#summary').innerHTML = `<b>${passed}</b> passed all 3 rules · <b>${filteredOut}</b> filtered out (old page, saturated or not US) · showing <b>${list.length}</b>`;
+  $('#feed').innerHTML = list.length ? list.map(card).join('') : '<div class="empty">No products match these filters right now.</div>';
+}
+
+fetch('/api/videos').then(r => r.json()).then(d => {
+  DATA = d.videos;
+  if (d.source !== 'sample') $('#banner').remove();
+  const niches = [...new Set(DATA.map(v => v.niche[0]))].sort();
+  $('#niche').innerHTML += niches.map(n => `<option>${esc(n)}</option>`).join('');
+  render();
+}).catch(() => { $('#summary').textContent = 'Could not load products.'; });
+</script>
+</body>
+</html>

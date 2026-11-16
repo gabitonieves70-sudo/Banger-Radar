@@ -1,0 +1,14 @@
+{
+  "name": "banger-radar",
+  "version": "1.0.0",
+  "description": "Banger Radar - finds fresh, unsaturated, US-ready dropshipping products from IG, FB and TikTok",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

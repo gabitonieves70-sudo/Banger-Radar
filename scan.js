@@ -7,7 +7,8 @@
 //   PER_QUERY         videos per search per platform (default 15)
 //   MAX_CHECKS        how many top videos get the deep page-age + comment check (default 12)
 //   SCAN_EVERY_HOURS  auto-scan interval (default 24)
-//   TIKTOK_QUERIES    how many of the searches also run on TikTok (default 4 - TikTok costs more)
+//   TIKTOK_QUERIES    how many of the searches run on TikTok (default 8)
+//   INSTAGRAM_SEARCH  "on" to include Instagram keyword search (default off: it only returns old top posts)
 //   TIKTOK_PER_QUERY  TikToks per search (default 10)
 //   MIN_VIEWS         minimum views to count (default 10000)
 //   MIN_COMMENT_RATE_PCT  minimum comments as % of views to get a deep check (default 0.1)
@@ -31,8 +32,8 @@ async function pool(items, n, fn) {
 
 const DAY = 864e5;
 const DEFAULT_QUERIES = [
-  'tiktok made me buy it', 'amazon finds', 'dog products', 'cat products',
-  'baby must haves', 'car accessories', 'home gadgets', 'viral products'
+  'tiktok made me buy it', 'dog gadget', 'cat toy', 'baby must haves',
+  'car gadget', 'kitchen gadget', 'home finds', 'gift idea'
 ];
 
 function config() {
@@ -42,10 +43,11 @@ function config() {
     perQuery: +process.env.PER_QUERY || 15,
     maxChecks: +process.env.MAX_CHECKS || 12,
     everyHours: +process.env.SCAN_EVERY_HOURS || 24,
-    tiktokQueries: +process.env.TIKTOK_QUERIES || 4,
+    tiktokQueries: +process.env.TIKTOK_QUERIES || 8,
+    instagram: (process.env.INSTAGRAM_SEARCH || 'off').toLowerCase() === 'on',
     minViews: +process.env.MIN_VIEWS || 10000,
     minCommentRate: (+process.env.MIN_COMMENT_RATE_PCT || 0.1) / 100,
-    tiktokPerQuery: +process.env.TIKTOK_PER_QUERY || 10
+    tiktokPerQuery: +process.env.TIKTOK_PER_QUERY || 8
   };
 }
 
@@ -96,7 +98,7 @@ async function scan() {
 
   // ---- 1. Pull this week's videos ----
   const [igRaw, ttRaw] = await Promise.all([
-    settle('Instagram search', runActor('apify/instagram-hashtag-scraper', {
+    !cfg.instagram ? [] : settle('Instagram search', runActor('apify/instagram-hashtag-scraper', {
       hashtags: cfg.queries, keywordSearch: true,
       resultsType: 'reels', resultsLimit: cfg.perQuery
     }), log),
@@ -146,9 +148,11 @@ async function scan() {
   }
 
   // Obvious old/big pages fail without spending money on a page check
-  const tooBig = v => (v.posts != null && v.posts > 100) || (v.followers != null && v.followers > 200000);
+  // A page that's 7 days old almost never has 50+ posts or 200K followers - fail those for free
+  const tooBig = v => (v.posts != null && v.posts > 50) || (v.followers != null && v.followers > 200000);
   const skipped = finalists.filter(tooBig);
-  finalists = finalists.filter(v => !tooBig(v)).slice(0, cfg.maxChecks);
+  const small = v => (v.posts != null && v.posts <= 20 ? 0 : 1);   // likely-new pages get checked first
+  finalists = finalists.filter(v => !tooBig(v)).sort((a, b) => small(a) - small(b) || b.rank - a.rank).slice(0, cfg.maxChecks);
 
   // ---- 3. Page-age checks + TikTok comments ----
   const igNames = [...new Set(finalists.filter(v => v.platform === 'instagram').map(v => v.handle))];
@@ -325,7 +329,7 @@ async function scan() {
 
   return {
     scannedAt: new Date(now).toISOString(),
-    stats: { notProducts: notProducts.length, ai: AI.enabled(), pulled: all.length, instagram: igRaw.length, tiktok: ttRaw.length, passedEngagement: fresh.length, deepChecked: finalists.length },
+    stats: { instagramOn: cfg.instagram, notProducts: notProducts.length, ai: AI.enabled(), pulled: all.length, instagram: igRaw.length, tiktok: ttRaw.length, passedEngagement: fresh.length, deepChecked: finalists.length },
     errors: log,
     records
   };

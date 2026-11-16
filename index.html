@@ -38,7 +38,7 @@
   .feed{display:grid;gap:14px;padding:0 16px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px}
   .card.banger{border-color:rgba(255,90,31,.55);box-shadow:0 0 0 1px rgba(255,90,31,.15),0 8px 30px -12px rgba(255,90,31,.45)}
-  .card.filtered{opacity:.6;border-style:dashed}
+  .card.filtered{opacity:.75;border-style:dashed}
   .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .score{display:flex;align-items:center;gap:8px}
   .ring{--p:0;width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--c) calc(var(--p)*1%),#232a38 0);flex:none}
@@ -111,6 +111,7 @@
 <div class="banner" id="banner">Loading…</div>
 
 <div class="filters">
+  <div class="row" id="views"></div>
   <div class="row" id="time">
     <div class="chip" data-v="24">Today</div>
     <div class="chip" data-v="72">3 days</div>
@@ -138,7 +139,7 @@
   </div>
   <div class="ctrl">
     <label class="toggle"><input type="checkbox" id="newOnly"> Pages ≤ 2 days only</label>
-    <label class="toggle"><input type="checkbox" id="showFiltered"> Show filtered out</label>
+
   </div>
 </div>
 
@@ -147,7 +148,13 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const state = { hours: 168, platform: 'all', niche: 'all', sort: 'score', min: 0, newOnly: false, showFiltered: false };
+const state = { hours: 168, platform: 'all', niche: 'all', sort: 'score', min: 0, newOnly: false, view: null };
+const isClose = v => !v.passed && !v.notProduct && v.fails.length === 1;
+const VIEWS = {
+  bangers: ['🔥 Bangers', v => v.passed],
+  close: ['👀 Close calls', isClose],
+  all: ['📋 Everything scanned', () => true]
+};
 let DATA = [];
 
 const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,'')+'M' : n >= 1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,'')+'K' : String(Math.round(n));
@@ -172,7 +179,10 @@ $('#niche').onchange = e => { state.niche = e.target.value; render(); };
 $('#sort').onchange = e => { state.sort = e.target.value; render(); };
 $('#min').oninput = e => { state.min = +e.target.value; $('#minLbl').textContent = state.min + '%'; render(); };
 $('#newOnly').onchange = e => { state.newOnly = e.target.checked; render(); };
-$('#showFiltered').onchange = e => { state.showFiltered = e.target.checked; render(); };
+$('#views').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  state.view = c.dataset.v; render();
+});
 
 function card(v) {
   const s = v.stats, cb = v.comments_breakdown, [tierTxt, tierColor] = TIER[v.tier];
@@ -194,7 +204,7 @@ function card(v) {
     <div class="top">
       <div class="score">
         <div class="ring" style="--p:${v.score};--c:${tierColor}"><b>${v.score}</b></div>
-        <div><div class="tier" style="color:${tierColor}">${v.passed ? tierTxt : '❌ FILTERED OUT'}</div><div class="pname">${esc(v.product)}</div></div>
+        <div><div class="tier" style="color:${v.passed ? tierColor : isClose(v) ? 'var(--warn)' : 'var(--bad)'}">${v.passed ? tierTxt : isClose(v) ? '👀 CLOSE CALL' : '❌ FILTERED OUT'}</div><div class="pname">${esc(v.product)}</div></div>
       </div>
       <a class="watch" href="${esc(v.url)}" target="_blank" rel="noopener">▶ Watch</a>
     </div>
@@ -271,11 +281,14 @@ function card(v) {
 
 function render() {
   const inTime = DATA.filter(v => v.stats.hoursSincePost <= state.hours);
-  const passed = inTime.filter(v => v.passed).length;
-  const filteredOut = inTime.length - passed;
+  const counts = Object.fromEntries(Object.entries(VIEWS).map(([k, [, f]]) => [k, inTime.filter(f).length]));
+  if (!state.view) state.view = counts.bangers ? 'bangers' : counts.close ? 'close' : 'all';
+  $('#views').innerHTML = Object.entries(VIEWS).map(([k, [label]]) =>
+    `<div class="chip ${state.view === k ? 'on' : ''}" data-v="${k}">${label} (${counts[k]})</div>`).join('');
+  const inView = VIEWS[state.view][1];
 
   let list = inTime.filter(v =>
-    (state.showFiltered || v.passed) &&
+    inView(v) &&
     (state.platform === 'all' || v.platform === state.platform) &&
     (state.niche === 'all' || v.niche[0] === state.niche) &&
     v.score >= state.min &&
@@ -288,10 +301,21 @@ function render() {
     newest: (a, b) => a.stats.hoursSincePost - b.stats.hoursSincePost,
     pageAge: (a, b) => a.stats.pageAgeDays - b.stats.pageAgeDays
   }[state.sort];
-  list.sort((a, b) => (b.passed - a.passed) || by(a, b));
+  const newFirst = (a, b) => ((a.stats.pageAgeDays <= 7 && a.account.ageKnown !== false) ? 0 : 1) - ((b.stats.pageAgeDays <= 7 && b.account.ageKnown !== false) ? 0 : 1);
+  list.sort((a, b) => (b.passed - a.passed) || (state.view === 'close' ? newFirst(a, b) : 0) || by(a, b));
 
-  $('#summary').innerHTML = `<b>${passed}</b> passed all 3 rules · <b>${filteredOut}</b> filtered out (old page, saturated or not US) · showing <b>${list.length}</b>`;
-  $('#feed').innerHTML = list.length ? list.map(card).join('') : `<div class="empty">No products match right now.${filteredOut && !state.showFiltered ? ' Turn on <b>Show filtered out</b> to see what got close and why it failed.' : ''}</div>`;
+  const explain = {
+    bangers: 'Passed all 3 rules: brand-new page (≤ 7 days), not saturated, mostly US.',
+    close: 'Failed just <b>one</b> rule. New pages are listed first. Worth a look.',
+    all: 'Every product video the scan deep-checked, with the reason each one failed.'
+  }[state.view];
+  $('#summary').innerHTML = `${explain} Showing <b>${list.length}</b>.`;
+  const empty = {
+    bangers: `No bangers in this scan yet.${counts.close ? ' Check <b>👀 Close calls</b>.' : ''} New scans run every day, or tap <b>Scan now</b>.`,
+    close: 'No close calls in this scan.',
+    all: 'Nothing scanned yet.'
+  }[state.view];
+  $('#feed').innerHTML = list.length ? list.map(card).join('') : `<div class="empty">${empty}</div>`;
 }
 
 $('#feed').addEventListener('click', e => {
@@ -322,7 +346,7 @@ function banner(d) {
     const s = st.stats || {};
     b.classList.add('live');
     b.innerHTML = `<div class="brow"><div><span class="pulse"></span><b>Live</b> · last scan ${since(st.lastScanAt)} · next in ${until(st.nextScanAt)}
-      <div class="small">Pulled ${s.pulled ?? 0} videos (📸 ${s.instagram ?? 0} · 🎵 ${s.tiktok ?? 0}) → ${s.passedEngagement ?? 0} had strong engagement this week${s.ai ? ` → 🤖 ${s.notProducts ?? 0} weren't real products` : ''} → ${s.deepChecked ?? 0} page-checked.${st.aiConnected ? ' · 🤖 Claude on' : ''} <a id="toSample">View sample</a></div></div>${btn}</div>`;
+      <div class="small">Pulled ${s.pulled ?? 0} videos (🎵 ${s.tiktok ?? 0} TikTok${s.instagramOn === false ? ' · 📸 Instagram coming next' : ' · 📸 ' + (s.instagram ?? 0)}) → ${s.passedEngagement ?? 0} had strong engagement this week${s.ai ? ` → 🤖 ${s.notProducts ?? 0} weren't real products` : ''} → ${s.deepChecked ?? 0} page-checked.${st.aiConnected ? ' · 🤖 Claude on' : ''} <a id="toSample">View sample</a></div></div>${btn}</div>`;
   }
   if (st.error) {
     b.classList.add('err');

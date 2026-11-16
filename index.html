@@ -75,6 +75,17 @@
   .actions{display:flex;gap:8px}
   .btn{flex:1;text-align:center;border:1px solid var(--line);background:var(--panel2);color:var(--dim);border-radius:10px;padding:8px;font-size:12.5px;cursor:not-allowed}
   .empty{color:var(--dim);text-align:center;padding:40px 16px}
+  .banner.live{background:rgba(34,211,127,.08);border-color:rgba(34,211,127,.35);color:#bff3d8}
+  .banner.err{background:rgba(255,77,106,.08);border-color:rgba(255,77,106,.35);color:#ffc2cc}
+  .banner .brow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .scanbtn{background:var(--hot);color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:13px;cursor:pointer}
+  .scanbtn:disabled{opacity:.5;cursor:default}
+  .banner a{color:inherit;text-decoration:underline;cursor:pointer}
+  .small{font-size:12px;opacity:.85;margin-top:4px}
+  .notes{font-size:12px;color:var(--dim);border-left:2px solid var(--line);padding-left:8px}
+  .est{font-size:10.5px;color:var(--dim);font-weight:400}
+  .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);margin-right:6px;animation:pl 1.4s infinite}
+  @keyframes pl{50%{opacity:.25}}
 </style>
 </head>
 <body>
@@ -88,7 +99,7 @@
   </div>
 </header>
 
-<div class="banner" id="banner">🧪 Showing <b>sample data</b> so you can test the site. Real Instagram, Facebook &amp; TikTok videos come in once scraping is connected.</div>
+<div class="banner" id="banner">Loading…</div>
 
 <div class="filters">
   <div class="row" id="time">
@@ -158,7 +169,14 @@ function card(v) {
   const s = v.stats, cb = v.comments_breakdown, [tierTxt, tierColor] = TIER[v.tier];
   const posted = new Date(v.postedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const oldest = new Date(v.account.oldestPostAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
-  const isNew = s.pageAgeDays <= 7;
+  const ageKnown = v.account.ageKnown !== false;
+  const isNew = ageKnown && s.pageAgeDays <= 7;
+  const ageTxt = !ageKnown ? 'Page age: unknown'
+    : `Page age: ${v.account.ageExact === false ? '≥ ' : ''}${days(s.pageAgeDays)} (oldest post ${oldest})`;
+  const est = cb.estimated ? ' <span class="est">(est.)</span>' : '';
+  const priceTxt = v.price ? `Cost $${v.price.costLow}–${v.price.costHigh} → sell $${v.price.sell} · <b>${pct(s.margin,0)} margin</b>` : '<span class="est">Supplier price lookup coming next</span>';
+  const adsTxt = v.saturation.adsChecked === false ? 'US ads not checked yet' : `${v.saturation.usAds} US ads${v.saturation.usAds ? ' (' + v.saturation.adDays + ' days)' : ''}`;
+  const outlierTxt = s.outlier == null ? '' : ` · <b>${s.outlier.toFixed(0)}x</b> this page's average`;
   const other = Math.max(0, 1 - cb.buyIntent - cb.hype - cb.redFlag - cb.bait);
   const parts = Object.entries(v.parts).map(([k, x]) =>
     `<div><span>${PART_NAMES[k]}</span><span class="pb"><i style="width:${Math.round(x*100)}%"></i></span><span>${Math.round(x*100)}</span></div>`).join('');
@@ -180,7 +198,7 @@ function card(v) {
     </div>
     <div class="meta">
       <span class="pill">👤 @${esc(v.account.handle)}</span>
-      <span class="pill ${isNew ? 'new' : 'saturated'}">${isNew ? '🆕 ' : ''}Page age: ${days(s.pageAgeDays)} (oldest post ${oldest})</span>
+      <span class="pill ${isNew ? 'new' : 'saturated'}">${isNew ? '🆕 ' : ''}${ageTxt}</span>
       <span class="pill">${fmt(v.account.followers)} followers · ${v.account.posts} posts</span>
     </div>
 
@@ -190,10 +208,10 @@ function card(v) {
       <div class="stat"><div class="n">${fmt(v.comments)}</div><div class="l">💬 ${pct(s.commentRate)}</div></div>
       <div class="stat"><div class="n">${fmt(v.shares)}</div><div class="l">🔁 shares</div></div>
     </div>
-    <div class="line">⚡ <b>${fmt(s.viewsPerHour)} views/hr</b> · <b>${s.outlier.toFixed(0)}x</b> this page's average · <b>${s.viewsPerFollower.toFixed(0)}x</b> its followers · comments/likes <b>${pct(s.commentsPerLike,0)}</b></div>
+    <div class="line">⚡ <b>${fmt(s.viewsPerHour)} views/hr</b>${outlierTxt} · <b>${s.viewsPerFollower.toFixed(0)}x</b> its followers · comments/likes <b>${pct(s.commentsPerLike,0)}</b></div>
 
     <div class="intent">
-      🛒 <b>Buy intent: ${pct(cb.buyIntent,0)}</b> of comments · ⚠️ red flags ${pct(cb.redFlag,0)}
+      🛒 <b>Buy intent: ${pct(cb.buyIntent,0)}</b> of comments${est} · ⚠️ red flags ${pct(cb.redFlag,0)}${cb.sampleSize ? ` <span class="est">· read ${cb.sampleSize} comments</span>` : ''}
       <div class="bar">
         <i style="width:${cb.buyIntent*100}%;background:var(--good)"></i>
         <i style="width:${cb.hype*100}%;background:var(--blue)"></i>
@@ -205,8 +223,8 @@ function card(v) {
     </div>
 
     <div class="meta">
-      <span class="pill ${v.saturationLabel.key}">${v.saturationLabel.key === 'fresh' ? '🟢' : v.saturationLabel.key === 'warm' ? '🟡' : '🔴'} ${v.saturationLabel.label}: ${v.saturation.copycatPages} copycat pages · ${v.saturation.usAds} US ads${v.saturation.usAds ? ' (' + v.saturation.adDays + ' days)' : ''}</span>
-      <span class="pill us">🇺🇸 US audience: ${pct(cb.usShare,0)}</span>
+      <span class="pill ${v.saturationLabel.key}">${v.saturationLabel.key === 'fresh' ? '🟢' : v.saturationLabel.key === 'warm' ? '🟡' : '🔴'} ${v.saturationLabel.label}: ${v.saturation.copycatPages} copycat pages · ${adsTxt}</span>
+      <span class="pill us">🇺🇸 US audience: ${pct(cb.usShare,0)}${cb.estimated ? ' (est.)' : ''}</span>
     </div>
 
     <div class="kv">
@@ -215,8 +233,10 @@ function card(v) {
       <span>👥 Age / lean</span><span>${esc(v.audience.age)} · ${esc(v.audience.lean)}</span>
       <span>💡 Why they buy</span><span>${esc(v.audience.why)}</span>
       <span>📅 Season</span><span>${esc(v.seasonal)}</span>
-      <span>💰 Price</span><span>Cost $${v.price.costLow}–${v.price.costHigh} → sell $${v.price.sell} · <b>${pct(s.margin,0)} margin</b></span>
+      <span>💰 Price</span><span>${priceTxt}</span>
     </div>
+    ${v.caption ? `<div class="notes">📝 ${esc(v.caption.slice(0, 160))}${v.caption.length > 160 ? '…' : ''}</div>` : ''}
+    ${(v.notes || []).length ? `<div class="notes">${v.notes.map(n => 'ℹ️ ' + esc(n)).join('<br>')}</div>` : ''}
 
     <details><summary>How the ${v.score}% was scored</summary><div class="parts">${parts}</div></details>
 
@@ -250,16 +270,66 @@ function render() {
   list.sort((a, b) => (b.passed - a.passed) || by(a, b));
 
   $('#summary').innerHTML = `<b>${passed}</b> passed all 3 rules · <b>${filteredOut}</b> filtered out (old page, saturated or not US) · showing <b>${list.length}</b>`;
-  $('#feed').innerHTML = list.length ? list.map(card).join('') : '<div class="empty">No products match these filters right now.</div>';
+  $('#feed').innerHTML = list.length ? list.map(card).join('') : `<div class="empty">No products match right now.${filteredOut && !state.showFiltered ? ' Turn on <b>Show filtered out</b> to see what got close and why it failed.' : ''}</div>`;
 }
 
-fetch('/api/videos').then(r => r.json()).then(d => {
-  DATA = d.videos;
-  if (d.source !== 'sample') $('#banner').remove();
-  const niches = [...new Set(DATA.map(v => v.niche[0]))].sort();
-  $('#niche').innerHTML += niches.map(n => `<option>${esc(n)}</option>`).join('');
-  render();
-}).catch(() => { $('#summary').textContent = 'Could not load products.'; });
+let viewSample = false, pollTimer = null;
+const since = iso => { const h = (Date.now() - new Date(iso)) / 36e5; return ago(h); };
+const until = iso => { const h = (new Date(iso) - Date.now()) / 36e5; return h <= 0 ? 'soon' : h < 1 ? Math.round(h * 60) + ' min' : Math.round(h) + ' hrs'; };
+
+function banner(d) {
+  const st = d.status, b = $('#banner');
+  b.className = 'banner';
+  if (!st.connected) {
+    b.innerHTML = '🧪 Showing <b>sample data</b>. Connect Apify to get real videos.';
+    return;
+  }
+  const btn = `<button class="scanbtn" id="scanBtn" ${st.scanning ? 'disabled' : ''}>${st.scanning ? 'Scanning…' : '🔄 Scan now'}</button>`;
+  if (st.scanning) {
+    b.classList.add('live');
+    b.innerHTML = `<div class="brow"><div><span class="pulse"></span><b>Scanning Instagram &amp; TikTok…</b> started ${since(st.scanStartedAt)}. Takes a few minutes. This page updates by itself.</div>${btn}</div>`;
+  } else if (d.source === 'sample') {
+    b.innerHTML = `<div class="brow"><div>🧪 Showing <b>sample data</b>.${st.lastScanAt ? ' <a id="toLive">Back to live results</a>' : ' First real scan starting soon.'}</div>${btn}</div>`;
+  } else {
+    const s = st.stats || {};
+    b.classList.add('live');
+    b.innerHTML = `<div class="brow"><div><span class="pulse"></span><b>Live</b> · last scan ${since(st.lastScanAt)} · next in ${until(st.nextScanAt)}
+      <div class="small">Pulled ${s.pulled ?? 0} videos (📸 ${s.instagram ?? 0} · 🎵 ${s.tiktok ?? 0}) → ${s.passedEngagement ?? 0} had strong engagement this week → ${s.deepChecked ?? 0} page-checked. <a id="toSample">View sample</a></div></div>${btn}</div>`;
+  }
+  if (st.error) {
+    b.classList.add('err');
+    b.innerHTML += `<div class="small">⚠️ ${esc(st.error)}</div>`;
+  }
+  const sb = $('#scanBtn');
+  if (sb) sb.onclick = async () => {
+    sb.disabled = true;
+    const r = await fetch('/api/scan', { method: 'POST' }).then(r => r.json()).catch(() => ({ message: 'Could not start scan' }));
+    if (!r.ok) { alertBox(r.message); sb.disabled = false; return; }
+    load();
+  };
+  const tl = $('#toLive'), ts = $('#toSample');
+  if (tl) tl.onclick = () => { viewSample = false; load(); };
+  if (ts) ts.onclick = () => { viewSample = true; load(); };
+}
+
+function alertBox(msg) {
+  const b = $('#banner');
+  b.insertAdjacentHTML('beforeend', `<div class="small">ℹ️ ${esc(msg)}</div>`);
+}
+
+function load() {
+  fetch('/api/videos' + (viewSample ? '?sample=1' : '')).then(r => r.json()).then(d => {
+    DATA = d.videos;
+    banner(d);
+    const niches = [...new Set(DATA.map(v => v.niche[0]))].sort();
+    $('#niche').innerHTML = '<option value="all">All niches</option>' + niches.map(n => `<option ${n === state.niche ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    if (!niches.includes(state.niche)) state.niche = 'all';
+    render();
+    clearTimeout(pollTimer);
+    if (d.status.scanning) pollTimer = setTimeout(load, 20000);
+  }).catch(() => { $('#summary').textContent = 'Could not load products.'; });
+}
+load();
 </script>
 </body>
 </html>

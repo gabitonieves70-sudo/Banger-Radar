@@ -37,15 +37,19 @@ function analyze(v, now = Date.now()) {
   const commentsPerLike = v.likes ? v.comments / v.likes : 0;
   const shareRate = v.shares / v.views;
   const viewsPerHour = v.views / hoursSincePost;
-  const outlier = v.account.avgViews ? v.views / v.account.avgViews : 1;
+  const outlier = v.account.avgViews ? v.views / v.account.avgViews : null;
   const viewsPerFollower = v.account.followers ? v.views / v.account.followers : 10;
   const competitors = v.saturation.copycatPages + v.saturation.usAds;
   const sat = saturationLabel(competitors);
-  const margin = v.price.sell ? (v.price.sell - v.price.costHigh) / v.price.sell : 0;
+  const margin = v.price && v.price.sell ? (v.price.sell - v.price.costHigh) / v.price.sell : null;
 
   // ---- Hard rules ----
   const fails = [];
-  if (pageAgeDays > RULES.maxPageAgeDays)
+  if (v.account.tooBig)
+    fails.push(`Established page (${v.account.posts} posts, ${v.account.followers} followers), not a new page`);
+  else if (v.account.ageKnown === false)
+    fails.push("Couldn't verify the page's age");
+  else if (pageAgeDays > RULES.maxPageAgeDays)
     fails.push(`Page is ${Math.floor(pageAgeDays)} days old (max ${RULES.maxPageAgeDays})`);
   if (competitors > RULES.maxCompetitors)
     fails.push(`Saturated: ${v.saturation.copycatPages} copycat pages + ${v.saturation.usAds} US ads`);
@@ -61,15 +65,19 @@ function analyze(v, now = Date.now()) {
     (clamp(likeRate / 0.1) + clamp(commentRate / 0.02) + clamp(commentsPerLike / 0.2) + clamp(shareRate / 0.01)) / 4;
   parts.velocity = clamp(viewsPerHour / 3000);
   const ageBoost = pageAgeDays <= 2 ? 1 : pageAgeDays <= 5 ? 0.8 : pageAgeDays <= 7 ? 0.5 : 0;
-  parts.newAccount = (ageBoost + clamp(viewsPerFollower / 10) + clamp(outlier / 10)) / 3;
+  parts.newAccount = outlier == null
+    ? (ageBoost + clamp(viewsPerFollower / 10)) / 2
+    : (ageBoost + clamp(viewsPerFollower / 10) + clamp(outlier / 10)) / 3;
   parts.saturation = competitors <= 3 ? 1 : competitors <= RULES.maxCompetitors ? 0.5 - (competitors - 4) * 0.05 : 0;
-  parts.margin = clamp((margin - 0.4) / 0.35);
-  parts.wow = clamp(v.wowFactor);
+  parts.margin = margin == null ? 0.5 : clamp((margin - 0.4) / 0.35);   // unknown price = neutral
+  parts.wow = v.wowFactor == null ? 0.6 : clamp(v.wowFactor);            // unknown = neutral
 
   let score = 0;
   for (const k in WEIGHTS) score += parts[k] * WEIGHTS[k];
   // Red-flag comments ("scam", "broke", "looks cheap") pull the score down
   score -= clamp(v.comments_breakdown.redFlag / 0.2) * 15;
+  // Giveaway / "comment WIN" bait inflates comments - discount it
+  score -= clamp((v.comments_breakdown.bait - 0.15) / 0.35) * 15;
   score = Math.round(clamp(score, 0, 100));
 
   const tier = score >= 80 ? 'banger' : score >= 60 ? 'test' : 'skip';

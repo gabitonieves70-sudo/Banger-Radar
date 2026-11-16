@@ -13,6 +13,7 @@ async function call(path, opts = {}) {
     signal: AbortSignal.timeout(90000)
   });
   const text = await res.text();
+  if (res.ok && !text) return {};
   if (!res.ok) {
     let msg = text.slice(0, 300);
     try { msg = JSON.parse(text).error?.message || msg; } catch {}
@@ -40,4 +41,25 @@ async function runActor(actorId, input, { maxMinutes = 12, actorTimeoutSecs = 60
   return (Array.isArray(items) ? items : []).filter(i => !i.error && !i.errorCode);
 }
 
-module.exports = { runActor };
+// Small saved-results store inside the user's Apify account, so a code update
+// on Railway doesn't wipe the last scan (and trigger a paid re-scan).
+let storeId = null;
+async function store() {
+  if (storeId) return storeId;
+  storeId = (await call('/key-value-stores?name=banger-radar', { method: 'POST' })).data.id;
+  return storeId;
+}
+async function kvGet(key) {
+  const id = await store();
+  const token = process.env.APIFY_TOKEN;
+  const res = await fetch(`${API}/key-value-stores/${id}/records/${key}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Apify store ' + res.status);
+  return res.json();
+}
+async function kvSet(key, value) {
+  const id = await store();
+  await call(`/key-value-stores/${id}/records/${key}`, { method: 'PUT', body: JSON.stringify(value) });
+}
+
+module.exports = { runActor, kvGet, kvSet };

@@ -5,7 +5,7 @@
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 
-async function ask(prompt, maxTokens = 1500) {
+async function ask(prompt, maxTokens = 1500, retry = true) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('ANTHROPIC_API_KEY is not set');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -18,8 +18,13 @@ async function ask(prompt, maxTokens = 1500) {
   if (!res.ok) throw new Error(`Claude API ${res.status}: ${data.error?.message || 'error'}`);
   const text = (data.content || []).map(c => c.text || '').join('');
   const m = text.match(/[\[{][\s\S]*[\]}]/);
-  if (!m) throw new Error('Claude returned no JSON');
-  return JSON.parse(m[0]);
+  try {
+    if (!m) throw new Error('no JSON');
+    return JSON.parse(m[0]);
+  } catch (e) {
+    if (retry) return ask(prompt + '\n\nIMPORTANT: keep every text field short and reply with complete, valid JSON only.', maxTokens + 2000, false);
+    throw new Error(`Claude reply wasn't valid JSON (${data.stop_reason || e.message})`);
+  }
 }
 
 const enabled = () => !!process.env.ANTHROPIC_API_KEY;
@@ -35,7 +40,7 @@ Captions:
 ${list}
 
 Reply with ONLY a JSON array, one object per caption, same order:
-[{"i":0,"product":true,"name":"Short product name (2-6 words)"}]`, 2000);
+[{"i":0,"product":true,"name":"Short product name (2-6 words)"}]`, 4000);
   const map = new Map();
   for (const r of Array.isArray(out) ? out : []) if (typeof r.i === 'number') map.set(r.i, r);
   return cands.map((_, i) => map.get(i) || { product: true, name: null });
@@ -78,7 +83,7 @@ Reply with ONLY this JSON:
  "seedance_prompt": "one ready Seedance 2.0 prompt for the first 4-6s clip",
  "image_prompt": "one GPT Image / Nano Banana prompt for a product box or hero still"
 }
-Numbers 0.0-1.0 for shares/wow. Prices in USD (supplier cost range, realistic US sell price). Give exactly 3 variants (theme swap, audience swap, holiday/season swap).`, 2200);
+Numbers 0.0-1.0 for shares/wow. Prices in USD (supplier cost range, realistic US sell price). Give exactly 3 variants (theme swap, audience swap, holiday/season swap). Keep prompts under 90 words each. JSON only, no markdown.`, 4000);
 }
 
 module.exports = { enabled, screenProducts, analyzeVideo, MODEL };

@@ -5,6 +5,7 @@ const path = require('path');
 const { analyze, RULES, WEIGHTS } = require('./score');
 const { getSampleVideos } = require('./sample');
 const { scan, config } = require('./scan');
+const { kvGet, kvSet } = require('./apify');
 
 const PORT = process.env.PORT || 3000;
 const INDEX = path.join(__dirname, 'index.html');
@@ -26,6 +27,7 @@ async function runScan(reason) {
     if (result.errors.length) state.lastError = result.errors.join(' | ');
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CACHE, JSON.stringify(result));
+    kvSet('latest', result).catch(e => console.error('[scan] could not save to Apify store', e.message));
     console.log(`[scan] done: pulled ${result.stats.pulled}, kept ${result.records.length}`, result.errors);
   } catch (e) {
     state.lastError = e.message;
@@ -41,7 +43,14 @@ function maybeAutoScan() {
   const lastAt = state.last ? new Date(state.last.scannedAt).getTime() : 0;
   if (Date.now() - lastAt >= every) runScan('auto');
 }
-setTimeout(maybeAutoScan, 5000);
+// On boot: reload the last scan from the Apify store first, so code updates don't cost a re-scan
+setTimeout(async () => {
+  if (!state.last && process.env.APIFY_TOKEN) {
+    try { const saved = await kvGet('latest'); if (saved && saved.records) { state.last = saved; console.log('[boot] loaded last scan from Apify store'); } }
+    catch (e) { console.error('[boot] could not load saved scan', e.message); }
+  }
+  maybeAutoScan();
+}, 3000);
 setInterval(maybeAutoScan, 10 * 60 * 1000);
 
 function sendJson(res, obj, code = 200) {

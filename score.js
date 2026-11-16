@@ -45,6 +45,7 @@ function analyze(v, now = Date.now()) {
 
   // ---- Hard rules ----
   const fails = [];
+  if (v.notProduct) fails.push('Not a physical product (Claude check)');
   if (v.account.tooBig)
     fails.push(`Established page (${v.account.posts} posts, ${v.account.followers} followers), not a new page`);
   else if (v.account.ageKnown === false)

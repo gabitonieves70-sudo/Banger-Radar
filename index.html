@@ -84,6 +84,15 @@
   .small{font-size:12px;opacity:.85;margin-top:4px}
   .notes{font-size:12px;color:var(--dim);border-left:2px solid var(--line);padding-left:8px}
   .est{font-size:10.5px;color:var(--dim);font-weight:400}
+  .btn.on{cursor:pointer;color:var(--text);border-color:#3a4252}
+  .btn.on:hover{border-color:var(--hot)}
+  .panel{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:13px;display:grid;gap:8px}
+  .panel[hidden]{display:none}
+  .vi{background:#0c0f15;border:1px solid var(--line);border-radius:10px;padding:8px}
+  .vi span{color:var(--dim)}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#cfd6e4;margin-top:4px;white-space:pre-wrap}
+  .copy{background:var(--hot);color:#fff;border:0;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;margin-left:6px}
+  .verdict{background:rgba(77,163,255,.08);border:1px solid rgba(77,163,255,.3);border-radius:10px;padding:8px 10px;font-size:13px;color:#cfe4ff}
   .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);margin-right:6px;animation:pl 1.4s infinite}
   @keyframes pl{50%{opacity:.25}}
 </style>
@@ -174,7 +183,7 @@ function card(v) {
   const ageTxt = !ageKnown ? 'Page age: unknown'
     : `Page age: ${v.account.ageExact === false ? '≥ ' : ''}${days(s.pageAgeDays)} (oldest post ${oldest})`;
   const est = cb.estimated ? ' <span class="est">(est.)</span>' : '';
-  const priceTxt = v.price ? `Cost $${v.price.costLow}–${v.price.costHigh} → sell $${v.price.sell} · <b>${pct(s.margin,0)} margin</b>` : '<span class="est">Supplier price lookup coming next</span>';
+  const priceTxt = v.price ? `Cost $${v.price.costLow}–${v.price.costHigh} → sell $${v.price.sell} · <b>${pct(s.margin,0)} margin</b>${v.price.estimated ? ' <span class="est">(AI est.)</span>' : ''}` : '<span class="est">Supplier price lookup coming next</span>';
   const adsTxt = v.saturation.adsChecked === false ? 'US ads not checked yet' : `${v.saturation.usAds} US ads${v.saturation.usAds ? ' (' + v.saturation.adDays + ' days)' : ''}`;
   const outlierTxt = s.outlier == null ? '' : ` · <b>${s.outlier.toFixed(0)}x</b> this page's average`;
   const other = Math.max(0, 1 - cb.buyIntent - cb.hype - cb.redFlag - cb.bait);
@@ -190,6 +199,7 @@ function card(v) {
       <a class="watch" href="${esc(v.url)}" target="_blank" rel="noopener">▶ Watch</a>
     </div>
 
+    ${v.ai && v.ai.verdict ? `<div class="verdict">🤖 ${esc(v.ai.verdict)}</div>` : ''}
     ${v.passed ? '' : `<div class="fails">${v.fails.map(f => '• ' + esc(f)).join('<br>')}</div>`}
 
     <div class="meta">
@@ -240,10 +250,21 @@ function card(v) {
 
     <details><summary>How the ${v.score}% was scored</summary><div class="parts">${parts}</div></details>
 
+    ${v.ai ? `<div class="panel" id="var-${v.id}" hidden>
+      <b>✨ Variant ideas</b>
+      ${(v.ai.variants || []).map(x => `<div class="vi"><b>${esc(x.name || '')}</b><br><span>${esc(x.angle || '')}</span></div>`).join('')}
+    </div>
+    <div class="panel" id="kit-${v.id}" hidden>
+      <b>🎬 Content kit</b>
+      ${(v.ai.hooks || []).length ? `<div class="vi"><b>Hooks</b>${v.ai.hooks.map(h => `<div>• ${esc(h)}</div>`).join('')}</div>` : ''}
+      ${v.ai.videoIdea ? `<div class="vi"><b>Video idea</b><div>${esc(v.ai.videoIdea)}</div></div>` : ''}
+      ${v.ai.seedancePrompt ? `<div class="vi"><b>Seedance prompt</b> <button class="copy" data-copy="${esc(v.ai.seedancePrompt)}">Copy</button><div class="mono">${esc(v.ai.seedancePrompt)}</div></div>` : ''}
+      ${v.ai.imagePrompt ? `<div class="vi"><b>Image prompt</b> <button class="copy" data-copy="${esc(v.ai.imagePrompt)}">Copy</button><div class="mono">${esc(v.ai.imagePrompt)}</div></div>` : ''}
+    </div>` : ''}
     <div class="actions">
-      <span class="btn" title="Coming soon">✨ Find variants</span>
-      <span class="btn" title="Coming soon">🎬 Content kit</span>
-      <span class="btn" title="Coming soon">⭐ Save</span>
+      ${v.ai ? `<span class="btn on" data-toggle="var-${v.id}">✨ Find variants</span>
+      <span class="btn on" data-toggle="kit-${v.id}">🎬 Content kit</span>` : `<span class="btn" title="Available on AI-checked products">✨ Find variants</span>
+      <span class="btn" title="Available on AI-checked products">🎬 Content kit</span>`}
     </div>
   </article>`;
 }
@@ -273,6 +294,13 @@ function render() {
   $('#feed').innerHTML = list.length ? list.map(card).join('') : `<div class="empty">No products match right now.${filteredOut && !state.showFiltered ? ' Turn on <b>Show filtered out</b> to see what got close and why it failed.' : ''}</div>`;
 }
 
+$('#feed').addEventListener('click', e => {
+  const t = e.target.closest('[data-toggle]');
+  if (t) { const p = document.getElementById(t.dataset.toggle); if (p) p.hidden = !p.hidden; return; }
+  const c = e.target.closest('.copy');
+  if (c) { navigator.clipboard?.writeText(c.dataset.copy).then(() => { c.textContent = 'Copied!'; setTimeout(() => c.textContent = 'Copy', 1500); }); }
+});
+
 let viewSample = false, pollTimer = null;
 const since = iso => { const h = (Date.now() - new Date(iso)) / 36e5; return ago(h); };
 const until = iso => { const h = (new Date(iso) - Date.now()) / 36e5; return h <= 0 ? 'soon' : h < 1 ? Math.round(h * 60) + ' min' : Math.round(h) + ' hrs'; };
@@ -294,7 +322,7 @@ function banner(d) {
     const s = st.stats || {};
     b.classList.add('live');
     b.innerHTML = `<div class="brow"><div><span class="pulse"></span><b>Live</b> · last scan ${since(st.lastScanAt)} · next in ${until(st.nextScanAt)}
-      <div class="small">Pulled ${s.pulled ?? 0} videos (📸 ${s.instagram ?? 0} · 🎵 ${s.tiktok ?? 0}) → ${s.passedEngagement ?? 0} had strong engagement this week → ${s.deepChecked ?? 0} page-checked. <a id="toSample">View sample</a></div></div>${btn}</div>`;
+      <div class="small">Pulled ${s.pulled ?? 0} videos (📸 ${s.instagram ?? 0} · 🎵 ${s.tiktok ?? 0}) → ${s.passedEngagement ?? 0} had strong engagement this week${s.ai ? ` → 🤖 ${s.notProducts ?? 0} weren't real products` : ''} → ${s.deepChecked ?? 0} page-checked.${st.aiConnected ? ' · 🤖 Claude on' : ''} <a id="toSample">View sample</a></div></div>${btn}</div>`;
   }
   if (st.error) {
     b.classList.add('err');

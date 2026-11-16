@@ -14,6 +14,20 @@
 
 const { runActor } = require('./apify');
 const T = require('./textcheck');
+const AI = require('./ai');
+
+// TikTok sometimes sends emoji as literal "\ud83d\ude80" text - turn them back into emoji
+function decode(t) {
+  return String(t || '').replace(/(?:\\u[0-9a-fA-F]{4})+/g, m => { try { return JSON.parse('"' + m + '"'); } catch { return m; } });
+}
+
+async function pool(items, n, fn) {
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); }
+  }));
+  return out;
+}
 
 const DAY = 864e5;
 const DEFAULT_QUERIES = [
@@ -47,7 +61,7 @@ function fromInstagram(i) {
     id: 'ig_' + (i.id || i.shortCode || i.url),
     url: i.url || (i.shortCode ? `https://www.instagram.com/reel/${i.shortCode}/` : ''),
     handle: i.ownerUsername || 'unknown',
-    caption: i.caption || '',
+    caption: decode(i.caption),
     postedAt: i.timestamp,
     views, likes: num(i.likesCount), comments: num(i.commentsCount), shares: num(i.sharesCount),
     commentTexts: [...(i.latestComments || []).map(c => (typeof c === 'string' ? c : c?.text)), i.firstComment].filter(Boolean),
@@ -63,7 +77,7 @@ function fromTikTok(i) {
     id: 'tt_' + (i.id || i.webVideoUrl),
     url: i.webVideoUrl || '',
     handle: a.name || 'unknown',
-    caption: i.text || '',
+    caption: decode(i.text),
     postedAt: i.createTimeISO,
     views: num(i.playCount), likes: num(i.diggCount), comments: num(i.commentCount), shares: num(i.shareCount),
     commentTexts: [],
@@ -118,6 +132,18 @@ async function scan() {
     if (!bestByPage.has(k) || rank > bestByPage.get(k).rank) bestByPage.set(k, { ...v, rank });
   }
   let finalists = [...bestByPage.values()].sort((a, b) => b.rank - a.rank);
+
+  // ---- AI pass 1: drop anything that isn't a physical product (saves Apify money on page checks) ----
+  let notProducts = [];
+  if (AI.enabled() && finalists.length) {
+    const top = finalists.slice(0, 40);
+    try {
+      const verdicts = await AI.screenProducts(top);
+      top.forEach((v, k) => { v.aiName = verdicts[k]?.name || null; v.isProduct = verdicts[k]?.product !== false; });
+      notProducts = top.filter(v => !v.isProduct);
+      finalists = [...top.filter(v => v.isProduct), ...finalists.slice(40)];
+    } catch (e) { log.push('AI product check: ' + e.message); }
+  }
 
   // Obvious old/big pages fail without spending money on a page check
   const tooBig = v => (v.posts != null && v.posts > 100) || (v.followers != null && v.followers > 200000);
@@ -200,7 +226,7 @@ async function scan() {
     }
 
     // Comments
-    const texts = v.platform === 'tiktok' ? (ttCom.get(v.url) || []) : [...(igCom.get(shortcode(v.url)) || []), ...v.commentTexts];
+    const texts = (v.platform === 'tiktok' ? (ttCom.get(v.url) || []) : [...(igCom.get(shortcode(v.url)) || []), ...v.commentTexts]).map(decode);
     const baitWord = T.captionBait(v.caption);
     if (baitWord) notes.push(`Caption says "comment ${baitWord}" to get a link, so the comment count is pumped up. Scored with that in mind.`);
     if (v.viewsHidden) notes.push('Views are hidden on this post, so they are estimated from likes');
@@ -231,7 +257,7 @@ async function scan() {
     records.push({
       id: v.id,
       sample: false,
-      product: T.productName(v.caption),
+      product: v.aiName || T.productName(v.caption),
       caption: v.caption.slice(0, 300),
       platform: v.platform,
       url: v.url,
@@ -255,13 +281,51 @@ async function scan() {
       wowFactor: null,
       captionBait: baitWord,
       viewsEstimated: !!v.viewsHidden,
-      notes
+      notes,
+      _texts: texts
     });
   }
 
+  // ---- AI pass 2: full breakdown for the page-checked videos ----
+  const deep = records.filter(r => !r.account.tooBig);
+  if (AI.enabled() && deep.length) {
+    let aiFails = 0;
+    await pool(deep, 3, async r => {
+      try {
+        const a = await AI.analyzeVideo(r, r._texts || []);
+        const f = x => (typeof x === 'number' && isFinite(x) ? Math.max(0, Math.min(1, x)) : null);
+        r.product = a.product_name || r.product;
+        r.notProduct = a.is_product === false;
+        r.niche = [a.niche || r.niche[0], a.sub_niche].filter(Boolean);
+        r.audience = { who: a.who_buys || r.audience.who, age: a.age || '—', lean: a.lean || '—', why: a.why_buy || '—' };
+        r.seasonal = a.season || r.seasonal;
+        r.wowFactor = f(a.wow_factor);
+        if (a.sell_price > 0 && a.cost_high > 0) r.price = { costLow: a.cost_low || a.cost_high, costHigh: a.cost_high, sell: a.sell_price, estimated: true };
+        const hasComments = (r._texts || []).length > 0;
+        r.comments_breakdown = {
+          buyIntent: f(a.buy_intent) ?? r.comments_breakdown.buyIntent,
+          hype: f(a.hype) ?? r.comments_breakdown.hype,
+          redFlag: f(a.red_flag) ?? r.comments_breakdown.redFlag,
+          bait: f(a.bait) ?? r.comments_breakdown.bait,
+          usShare: f(a.us_share) ?? r.comments_breakdown.usShare,
+          quotes: (a.best_quotes || []).filter(Boolean).slice(0, 3).length ? a.best_quotes.slice(0, 3) : r.comments_breakdown.quotes,
+          sampleSize: (r._texts || []).length,
+          estimated: !hasComments,
+          ai: true
+        };
+        r.ai = {
+          verdict: a.verdict || '', variants: (a.variants || []).slice(0, 3), hooks: (a.hooks || []).slice(0, 3),
+          videoIdea: a.video_idea || '', seedancePrompt: a.seedance_prompt || '', imagePrompt: a.image_prompt || ''
+        };
+        r.notes = r.notes.filter(n => !n.startsWith("Couldn't read comments") || !hasComments);
+      } catch (e) { aiFails++; if (aiFails === 1) log.push('AI breakdown: ' + e.message); }
+    });
+  }
+  for (const r of records) delete r._texts;
+
   return {
     scannedAt: new Date(now).toISOString(),
-    stats: { pulled: all.length, instagram: igRaw.length, tiktok: ttRaw.length, passedEngagement: fresh.length, deepChecked: finalists.length },
+    stats: { notProducts: notProducts.length, ai: AI.enabled(), pulled: all.length, instagram: igRaw.length, tiktok: ttRaw.length, passedEngagement: fresh.length, deepChecked: finalists.length },
     errors: log,
     records
   };

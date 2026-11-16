@@ -7,7 +7,7 @@ const RULES = {
   maxCompetitors: 10,     // Rule 2: copycat pages + US advertisers above this = saturated
   minUsShare: 0.6,        // Rule 3: at least 60% of comments must look US
   minViews: 10000,        // engagement floor
-  minCommentRate: 0.005   // 0.5% comments / views
+  minCommentRate: 0.001   // 0.1% comments / views (Banger % still rewards higher)
 };
 
 const WEIGHTS = {

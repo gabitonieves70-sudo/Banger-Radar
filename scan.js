@@ -10,6 +10,7 @@
 //   TIKTOK_QUERIES    how many of the searches also run on TikTok (default 4 - TikTok costs more)
 //   TIKTOK_PER_QUERY  TikToks per search (default 10)
 //   MIN_VIEWS         minimum views to count (default 10000)
+//   MIN_COMMENT_RATE_PCT  minimum comments as % of views to get a deep check (default 0.1)
 
 const { runActor } = require('./apify');
 const T = require('./textcheck');
@@ -29,6 +30,7 @@ function config() {
     everyHours: +process.env.SCAN_EVERY_HOURS || 24,
     tiktokQueries: +process.env.TIKTOK_QUERIES || 4,
     minViews: +process.env.MIN_VIEWS || 10000,
+    minCommentRate: (+process.env.MIN_COMMENT_RATE_PCT || 0.1) / 100,
     tiktokPerQuery: +process.env.TIKTOK_PER_QUERY || 10
   };
 }
@@ -81,8 +83,8 @@ async function scan() {
   // ---- 1. Pull this week's videos ----
   const [igRaw, ttRaw] = await Promise.all([
     settle('Instagram search', runActor('apify/instagram-hashtag-scraper', {
-      hashtags: cfg.queries.map(q => q.replace(/[^\w]/g, '').toLowerCase()), keywordSearch: false,
-      resultsType: 'posts', resultsLimit: cfg.perQuery
+      hashtags: cfg.queries, keywordSearch: true,
+      resultsType: 'reels', resultsLimit: cfg.perQuery
     }), log),
     settle('TikTok search', runActor('clockworks/tiktok-scraper', {
       searchQueries: cfg.queries.slice(0, cfg.tiktokQueries), searchSection: '/video', videoSearchDateFilter: 'PAST_WEEK', videoSearchSorting: 'MOST_LIKED',
@@ -103,7 +105,7 @@ async function scan() {
     const t = new Date(v.postedAt).getTime();
     if (!t || now - t > 7 * DAY) return false;
     if (v.viewsHidden) return v.likes >= 1000 && v.comments / Math.max(1, v.likes) >= 0.03;
-    return v.views >= cfg.minViews && v.comments / v.views >= 0.005;
+    return v.views >= cfg.minViews && v.comments / v.views >= cfg.minCommentRate;
   });
   // Views hidden on some IG posts: estimate from likes (~8% like rate) so the math works
   for (const v of fresh) if (v.viewsHidden) v.views = Math.round(v.likes / 0.08);

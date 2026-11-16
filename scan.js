@@ -9,6 +9,7 @@
 //   SCAN_EVERY_HOURS  auto-scan interval (default 24)
 //   TIKTOK_QUERIES    how many of the searches also run on TikTok (default 4 - TikTok costs more)
 //   TIKTOK_PER_QUERY  TikToks per search (default 10)
+//   MIN_VIEWS         minimum views to count (default 10000)
 
 const { runActor } = require('./apify');
 const T = require('./textcheck');
@@ -27,6 +28,7 @@ function config() {
     maxChecks: +process.env.MAX_CHECKS || 12,
     everyHours: +process.env.SCAN_EVERY_HOURS || 24,
     tiktokQueries: +process.env.TIKTOK_QUERIES || 4,
+    minViews: +process.env.MIN_VIEWS || 10000,
     tiktokPerQuery: +process.env.TIKTOK_PER_QUERY || 10
   };
 }
@@ -80,10 +82,10 @@ async function scan() {
   const [igRaw, ttRaw] = await Promise.all([
     settle('Instagram search', runActor('apify/instagram-hashtag-scraper', {
       hashtags: cfg.queries.map(q => q.replace(/[^\w]/g, '').toLowerCase()), keywordSearch: false,
-      resultsType: 'reels', resultsLimit: cfg.perQuery
+      resultsType: 'posts', resultsLimit: cfg.perQuery
     }), log),
     settle('TikTok search', runActor('clockworks/tiktok-scraper', {
-      searchQueries: cfg.queries.slice(0, cfg.tiktokQueries), searchSection: '/video', videoSearchDateFilter: 'PAST_WEEK',
+      searchQueries: cfg.queries.slice(0, cfg.tiktokQueries), searchSection: '/video', videoSearchDateFilter: 'PAST_WEEK', videoSearchSorting: 'MOST_LIKED',
       resultsPerPage: cfg.tiktokPerQuery, proxyCountryCode: 'US',
       shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadAvatars: false,
       shouldDownloadMusicCovers: false, shouldDownloadSlideshowImages: false
@@ -101,7 +103,7 @@ async function scan() {
     const t = new Date(v.postedAt).getTime();
     if (!t || now - t > 7 * DAY) return false;
     if (v.viewsHidden) return v.likes >= 1000 && v.comments / Math.max(1, v.likes) >= 0.03;
-    return v.views >= 10000 && v.comments / v.views >= 0.005;
+    return v.views >= cfg.minViews && v.comments / v.views >= 0.005;
   });
   // Views hidden on some IG posts: estimate from likes (~8% like rate) so the math works
   for (const v of fresh) if (v.viewsHidden) v.views = Math.round(v.likes / 0.08);

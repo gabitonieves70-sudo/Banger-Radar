@@ -59,6 +59,15 @@ ${coms}
 
 Rules for comments: "buy intent" = the person wants to buy/own it or asks where/how much (e.g. "link?", "need this for my mom", "how much"). "red flag" = says it's a scam, cheap, broke, fake, AI. "bait" = only typed a keyword because the caption said "comment X for the link", giveaway entries, tagging friends with no opinion. "us_share" = share of commenters who look like they're in the USA (English, US slang/places/prices; Spanish, Hindi, Portuguese, other countries count as non-US).
 
+Judge the product like a winning-product researcher. What converts best for organic short-form dropshipping:
+- A "wow" factor that stops the scroll and can be demoed in 3 seconds (visible transformation / before-after)
+- Solves a specific pain point or hits an emotion (pets, babies, gifts, nostalgia, identity like "dog moms" or "Star Wars fans")
+- Impulse price around $20-60, high perceived value, ~3x markup over supplier cost
+- Light, cheap to ship, not fragile, no sizing headaches, not sold at every Walmart
+- Utility/evergreen items last 12-24 months; pure novelty fades in 3-6 months
+- Avoid: licensed/branded IP (copyright risk), medical claims, weapons, adult items, food/supplements
+"product_fit" = 0.0-1.0 overall fit to these criteria.
+
 The brand makes AI-generated UGC videos: vertical 9:16, authentic iPhone look (not cinematic), deep focus no bokeh, cool bright modern lighting, Seedance 2.0 clips 4-6 seconds each. Favorite hooks: "ran to Costco/Walmart and found this" shelf grab, "drink drop" in-store pan to the product box, problem/solution demo, gift reaction.
 
 Reply with ONLY this JSON:
@@ -73,6 +82,8 @@ Reply with ONLY this JSON:
  "why_buy": "one line (problem-solver, gift, impulse, cute, etc)",
  "season": "Evergreen or holiday name + note",
  "wow_factor": 0.0,
+ "product_fit": 0.0,
+ "risks": "one short line: IP/licensing, safety, shipping, saturation or other risks (or 'none')",
  "buy_intent": 0.0, "hype": 0.0, "red_flag": 0.0, "bait": 0.0, "us_share": 0.0,
  "best_quotes": ["up to 3 short real comments showing buy intent"],
  "cost_low": 0, "cost_high": 0, "sell_price": 0,
@@ -83,7 +94,7 @@ Reply with ONLY this JSON:
  "seedance_prompt": "one ready Seedance 2.0 prompt for the first 4-6s clip",
  "image_prompt": "one GPT Image / Nano Banana prompt for a product box or hero still"
 }
-Numbers 0.0-1.0 for shares/wow. Prices in USD (supplier cost range, realistic US sell price). Give exactly 3 variants (theme swap, audience swap, holiday/season swap). Keep prompts under 90 words each. JSON only, no markdown.`, 4000);
+Numbers 0.0-1.0 for shares/wow/product_fit. Prices in USD (supplier cost range, realistic US sell price). Give exactly 3 variants (theme swap, audience swap, holiday/season swap). Keep prompts under 90 words each. JSON only, no markdown.`, 4000);
 }
 
 module.exports = { enabled, screenProducts, analyzeVideo, MODEL };

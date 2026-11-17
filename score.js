@@ -1,112 +1,64 @@
-// Banger Radar scoring engine.
-// Every video goes through the 3 hard rules first. If it fails any, it never
-// reaches the feed. Survivors get a Banger % (0-100).
-
-const RULES = {
-  maxPageAgeDays: 7,      // Rule 1: oldest post on the page must be this new or newer
-  maxCompetitors: 10,     // Rule 2: copycat pages + US advertisers above this = saturated
-  minUsShare: 0.6,        // Rule 3: at least 60% of comments must look US
-  minViews: 10000,        // engagement floor
-  minCommentRate: 0.001   // 0.1% comments / views (Banger % still rewards higher)
-};
+// Banger Radar scoring v2 - the POST matters, not the account.
+// Hard rules (from Settings): posted within N days, min views, min comments, min like rate,
+// a real product, mostly-US comments, not saturated. Survivors get a Banger % (0-100).
 
 const WEIGHTS = {
-  buyIntent: 25,
-  engagement: 20,
-  velocity: 15,
-  newAccount: 15,
-  saturation: 10,
-  margin: 10,
-  wow: 5
+  buyIntent: 25,     // % of comments that want to buy
+  engagement: 20,    // like rate, comment rate, comments-per-like, shares
+  velocity: 15,      // views per hour since posted
+  productFit: 20,    // Claude: wow factor, pain point/emotion, impulse price, markup, evergreen
+  saturation: 10,    // few other pages / US ads on it
+  margin: 10         // estimated supplier cost vs. sell price
 };
 
 const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
 
-function saturationLabel(competitors) {
-  if (competitors <= 3) return { key: 'fresh', label: 'FRESH' };
-  if (competitors <= RULES.maxCompetitors) return { key: 'warm', label: 'WARMING UP' };
-  return { key: 'saturated', label: 'SATURATED' };
-}
-
-function analyze(v, now = Date.now()) {
-  const hoursSincePost = Math.max(0.5, (now - new Date(v.postedAt).getTime()) / 36e5);
-  const pageAgeDays = (now - new Date(v.account.oldestPostAt).getTime()) / 864e5;
-
-  const likeRate = v.likes / v.views;
-  const commentRate = v.comments / v.views;
+function analyze(v, S, now = Date.now()) {
+  const hours = Math.max(0.5, (now - new Date(v.postedAt).getTime()) / 36e5);
+  const cb = v.comments_breakdown || {};
+  const likeRate = v.likes / Math.max(1, v.views);
+  const commentRate = v.comments / Math.max(1, v.views);
   const commentsPerLike = v.likes ? v.comments / v.likes : 0;
-  const shareRate = v.shares / v.views;
-  const viewsPerHour = v.views / hoursSincePost;
-  const outlier = v.account.avgViews ? v.views / v.account.avgViews : null;
-  const viewsPerFollower = v.account.followers ? v.views / v.account.followers : 10;
-  const competitors = v.saturation.copycatPages + v.saturation.usAds;
-  const sat = saturationLabel(competitors);
+  const shareRate = (v.shares || 0) / Math.max(1, v.views);
+  const viewsPerHour = v.views / hours;
+  const competitors = (v.saturation?.copycatPages || 0) + (v.saturation?.usAds || 0);
   const margin = v.price && v.price.sell ? (v.price.sell - v.price.costHigh) / v.price.sell : null;
 
-  // ---- Hard rules ----
-  const fails = [];
-  if (v.notProduct) fails.push('Not a physical product (Claude check)');
-  if (v.account.tooBig)
-    fails.push(`Established page (${v.account.posts} posts, ${v.account.followers} followers), not a new page`);
-  else if (v.account.ageKnown === false)
-    fails.push("Couldn't verify the page's age");
-  else if (pageAgeDays > RULES.maxPageAgeDays)
-    fails.push(`Page is ${Math.floor(pageAgeDays)} days old (max ${RULES.maxPageAgeDays})`);
-  if (competitors > RULES.maxCompetitors)
-    fails.push(`Saturated: ${v.saturation.copycatPages} copycat pages + ${v.saturation.usAds} US ads`);
-  if (v.comments_breakdown.usShare < RULES.minUsShare)
-    fails.push(`Only ${Math.round(v.comments_breakdown.usShare * 100)}% US audience`);
-  if (v.views < RULES.minViews || commentRate < RULES.minCommentRate)
-    fails.push('Engagement too weak');
+  // ---- hard rules, each with pass/fail so the site can show a checklist ----
+  const rules = [
+    { key: 'age', label: `Posted within ${S.maxAgeDays} days`, ok: hours <= S.maxAgeDays * 24, value: hours < 48 ? `${Math.round(hours)} hrs ago` : `${Math.round(hours / 24)} days ago` },
+    { key: 'views', label: `${S.minViews.toLocaleString()}+ views`, ok: v.views >= S.minViews, value: v.views.toLocaleString() },
+    { key: 'comments', label: `${S.minComments}+ comments`, ok: v.comments >= S.minComments, value: v.comments.toLocaleString() },
+    { key: 'likes', label: `Like rate ${S.minLikeRatePct}%+`, ok: likeRate * 100 >= S.minLikeRatePct, value: (likeRate * 100).toFixed(1) + '%' },
+    { key: 'product', label: 'Real physical product', ok: !v.notProduct, value: v.notProduct ? 'No (Claude)' : 'Yes' },
+    { key: 'us', label: `${S.minUsPct}%+ US audience`, ok: cb.usShare == null ? null : cb.usShare * 100 >= S.minUsPct, value: cb.usShare == null ? 'not checked' : Math.round(cb.usShare * 100) + '%' },
+    { key: 'sat', label: `Not saturated (≤ ${S.maxCopycats})`, ok: competitors <= S.maxCopycats, value: `${v.saturation?.copycatPages || 0} pages · ${v.saturation?.usAds || 0} ads` }
+  ];
+  const fails = rules.filter(r => r.ok === false);
 
-  // ---- Score parts (each 0..1) ----
-  const parts = {};
-  parts.buyIntent = clamp(v.comments_breakdown.buyIntent / 0.4);
-  // "Comment LINK and I'll DM you" captions pump comments - count them at 40%
-  const bf = v.captionBait ? 0.4 : 1;
-  parts.engagement =
-    (clamp(likeRate / 0.1) + clamp(commentRate * bf / 0.02) + clamp(commentsPerLike * bf / 0.2) + clamp(shareRate / 0.01)) / 4;
-  parts.velocity = clamp(viewsPerHour / 3000);
-  const ageBoost = pageAgeDays <= 2 ? 1 : pageAgeDays <= 5 ? 0.8 : pageAgeDays <= 7 ? 0.5 : 0;
-  parts.newAccount = outlier == null
-    ? (ageBoost + clamp(viewsPerFollower / 10)) / 2
-    : (ageBoost + clamp(viewsPerFollower / 10) + clamp(outlier / 10)) / 3;
-  parts.saturation = competitors <= 3 ? 1 : competitors <= RULES.maxCompetitors ? 0.5 - (competitors - 4) * 0.05 : 0;
-  parts.margin = margin == null ? 0.5 : clamp((margin - 0.4) / 0.35);   // unknown price = neutral
-  parts.wow = v.wowFactor == null ? 0.6 : clamp(v.wowFactor);            // unknown = neutral
-
+  // ---- score parts (0..1) ----
+  const bf = v.captionBait ? 0.4 : 1;   // "comment LINK for the link" pumps comments
+  const parts = {
+    buyIntent: cb.buyIntent == null ? clamp(commentsPerLike * bf / 0.15) * 0.6 : clamp(cb.buyIntent / 0.4),
+    engagement: (clamp(likeRate / 0.08) + clamp(commentRate * bf / 0.01) + clamp(commentsPerLike * bf / 0.1) + clamp(shareRate / 0.01)) / 4,
+    velocity: clamp(Math.log10(Math.max(1, viewsPerHour)) / 4),       // 10K views/hr = max
+    productFit: v.productFit == null ? 0.5 : v.productFit,
+    saturation: competitors === 0 ? 1 : clamp(1 - competitors / (S.maxCopycats + 1)),
+    margin: margin == null ? 0.5 : clamp((margin - 0.4) / 0.35)
+  };
   let score = 0;
   for (const k in WEIGHTS) score += parts[k] * WEIGHTS[k];
-  // Red-flag comments ("scam", "broke", "looks cheap") pull the score down
-  score -= clamp(v.comments_breakdown.redFlag / 0.2) * 15;
-  // Giveaway / "comment WIN" bait inflates comments - discount it
-  score -= clamp((v.comments_breakdown.bait - 0.15) / 0.35) * 15;
+  score -= clamp((cb.redFlag || 0) / 0.2) * 15;
+  score -= clamp(((cb.bait || 0) - 0.15) / 0.35) * 15;
   score = Math.round(clamp(score, 0, 100));
 
-  const tier = score >= 80 ? 'banger' : score >= 60 ? 'test' : 'skip';
+  const passed = fails.length === 0;
+  const tier = !passed ? (fails.length === 1 && !v.notProduct ? 'close' : 'out') : score >= 75 ? 'banger' : 'test';
 
   return {
-    ...v,
-    passed: fails.length === 0,
-    fails,
-    score,
-    tier,
-    parts,
-    stats: {
-      hoursSincePost,
-      pageAgeDays,
-      likeRate,
-      commentRate,
-      commentsPerLike,
-      shareRate,
-      viewsPerHour,
-      outlier,
-      viewsPerFollower,
-      competitors,
-      margin
-    },
-    saturationLabel: sat
+    ...v, passed, fails: fails.map(f => f.label), rules, score, tier, parts,
+    stats: { hours, likeRate, commentRate, commentsPerLike, shareRate, viewsPerHour, competitors, margin }
   };
 }
 
-module.exports = { analyze, RULES, WEIGHTS };
+module.exports = { analyze, WEIGHTS };

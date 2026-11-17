@@ -28,8 +28,9 @@ const DEFAULTS = {
   maxCopycats: 10,
 
   perKeyword: 20,       // Instagram reels per keyword (only matching reels are charged)
-  deepChecks: 15,       // top reels that get comments read + full Claude breakdown
-  adsPerKeyword: 10,
+  deepChecks: 8,        // top reels that get comments read + full Claude breakdown
+  adsPerKeyword: 5,
+  apifyFreePlan: true,  // free plan: Instagram search only returns 3 full reels per run, so run 1 keyword per run
 
   sources: { instagram: true, facebookAds: true, tiktok: false },
   tiktokKeywords: 4,
@@ -60,6 +61,7 @@ function clean(input) {
   s.tiktokPerKeyword = n(s.tiktokPerKeyword, 1, 30, 5);
   s.scanEveryHours = n(s.scanEveryHours, 1, 168, 24);
   for (const k of Object.keys(s.sources)) s.sources[k] = !!s.sources[k];
+  s.apifyFreePlan = s.apifyFreePlan !== false;
   return s;
 }
 

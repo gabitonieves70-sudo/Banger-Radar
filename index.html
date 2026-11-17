@@ -439,6 +439,7 @@ async function openSettings() {
       ${sw('sIg', S.sources.instagram, '📸 Instagram Reels', 'Main source: keyword search for fresh reels')}
       ${sw('sFb', S.sources.facebookAds, '📢 Facebook + Instagram ads', 'New US product ads from the Meta Ad Library')}
       ${sw('sTt', S.sources.tiktok, '🎵 TikTok', 'Optional, small sample')}
+      ${sw('sFree', S.apifyFreePlan, '🆓 Apify free plan mode', 'Searches 1 keyword per run so each returns 3 full reels. Turn off after upgrading Apify.')}
     </div></div>
     <div><b>Rules a reel must pass</b><div class="fgrid" style="margin-top:8px">
       ${f('sAge','Posted within (days)',S.maxAgeDays)}${f('sViews','Min views',S.minViews,1000)}${f('sCom','Min comments',S.minComments,10)}
@@ -458,7 +459,7 @@ async function openSettings() {
     </div>`;
   const est = () => {
     const kw = $('#sKw').value.split('\n').filter(x => x.trim()).length, ak = $('#sAdKw').value.split('\n').filter(x => x.trim()).length;
-    const ig = $('#sIg').checked ? kw * +$('#sPer').value * 0.0015 : 0;
+    const ig = $('#sIg').checked ? kw * ($('#sFree').checked ? 3 : +$('#sPer').value) * 0.0015 : 0;
     const ads = $('#sFb').checked ? ak * +$('#sAds').value * 0.0058 : 0;
     const deep = +$('#sDeep').value * 30 * 0.0026;
     const tt = $('#sTt').checked ? +$('#sTtK').value * +$('#sTtP').value * 0.008 : 0;
@@ -467,7 +468,7 @@ async function openSettings() {
   $('#settingsBody').addEventListener('input', est); est();
   $('#sReset').onclick = () => { save(r.defaults); };
   $('#sSave').onclick = () => save({
-    sources: { instagram: $('#sIg').checked, facebookAds: $('#sFb').checked, tiktok: $('#sTt').checked },
+    sources: { instagram: $('#sIg').checked, facebookAds: $('#sFb').checked, tiktok: $('#sTt').checked }, apifyFreePlan: $('#sFree').checked,
     maxAgeDays: +$('#sAge').value, minViews: +$('#sViews').value, minComments: +$('#sCom').value, minLikeRatePct: +$('#sLike').value,
     minUsPct: +$('#sUs').value, maxCopycats: +$('#sSat').value,
     keywords: $('#sKw').value.split('\n'), adKeywords: $('#sAdKw').value.split('\n'),

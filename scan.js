@@ -83,11 +83,21 @@ async function scan() {
 
   const minDate = isoDaysAgo(S.maxAgeDays);
 
-  const igTask = S.sources.instagram && S.keywords.length ? settle('Instagram search', runActor('memo23/instagram-reels-search-scraper', {
-    queries: S.keywords, maxResultsPerQuery: S.perKeyword, oldestPostDate: minDate,
+  const igInput = queries => ({
+    queries, maxResultsPerQuery: S.apifyFreePlan ? 3 : S.perKeyword, oldestPostDate: minDate,
     minimumViews: S.minViews, minimumComments: S.minComments,
     contentType: 'reels_only', englishOnly: true, includeHistorical: false
-  }, { maxMinutes: 15 }), log) : Promise.resolve([]);
+  });
+  const igTask = !(S.sources.instagram && S.keywords.length) ? Promise.resolve([])
+    : !S.apifyFreePlan ? settle('Instagram search', runActor('memo23/instagram-reels-search-scraper', igInput(S.keywords), { maxMinutes: 15 }), log)
+    : (async () => {   // free plan: one keyword per run (3 full reels each)
+        const out = []; let errs = 0;
+        await pool(S.keywords, 4, async k => {
+          try { out.push(...await runActor('memo23/instagram-reels-search-scraper', igInput([k]), { maxMinutes: 8 })); }
+          catch (e) { if (++errs === 1) log.push('Instagram search: ' + e.message); }
+        });
+        return out;
+      })();
 
   const ttTask = S.sources.tiktok && S.tiktokKeywords > 0 ? settle('TikTok search', runActor('clockworks/tiktok-scraper', {
     searchQueries: S.keywords.slice(0, S.tiktokKeywords), searchSection: '/video', videoSearchDateFilter: 'PAST_WEEK',
@@ -107,6 +117,7 @@ async function scan() {
   const seen = new Set();
   const all = [...igRaw.map(fromIgSearch), ...ttRaw.map(fromTikTok)].filter(v => {
     if (!v.url || seen.has(v.id)) return false;
+    if (v.platform === 'instagram' && v.caption.length <= 3 && !v.views) return false;   // free-plan teaser row
     seen.add(v.id); return true;
   });
   const fresh = all.filter(v => {

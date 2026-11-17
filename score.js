@@ -39,8 +39,9 @@ function analyze(v, S, now = Date.now()) {
   // ---- score parts (0..1) ----
   const bf = v.captionBait ? 0.4 : 1;   // "comment LINK for the link" pumps comments
   const parts = {
-    buyIntent: cb.buyIntent == null ? clamp(commentsPerLike * bf / 0.15) * 0.6 : clamp(cb.buyIntent / 0.4),
-    engagement: (clamp(likeRate / 0.08) + clamp(commentRate * bf / 0.01) + clamp(commentsPerLike * bf / 0.1) + clamp(shareRate / 0.01)) / 4,
+    // Tuned to real viral Instagram numbers: 5% like rate, 0.3% comment rate, 5 comments per 100 likes = full marks
+    buyIntent: cb.buyIntent == null ? 0.3 + clamp(commentsPerLike * bf / 0.05) * 0.3 : clamp(cb.buyIntent / 0.35),
+    engagement: (clamp(likeRate / 0.05) + clamp(commentRate * bf / 0.003) + clamp(commentsPerLike * bf / 0.05) + (shareRate ? clamp(shareRate / 0.005) : 0.5)) / 4,
     velocity: clamp(Math.log10(Math.max(1, viewsPerHour)) / 4),       // 10K views/hr = max
     productFit: v.productFit == null ? 0.5 : v.productFit,
     saturation: competitors === 0 ? 1 : clamp(1 - competitors / (S.maxCopycats + 1)),

@@ -28,11 +28,11 @@ const DEFAULTS = {
   maxCopycats: 10,
 
   perKeyword: 20,       // Instagram reels per keyword (only matching reels are charged)
-  deepChecks: 8,        // top reels that get comments read + full Claude breakdown
+  deepChecks: 12,       // top reels that get comments read + full Claude breakdown
   adsPerKeyword: 5,
   apifyFreePlan: true,  // free plan: Instagram search only returns 3 full reels per run, so run 1 keyword per run
 
-  sources: { instagram: true, facebookAds: true, tiktok: false },
+  sources: { instagram: true, facebookAds: false, tiktok: false },
   tiktokKeywords: 4,
   tiktokPerKeyword: 5,
 

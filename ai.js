@@ -34,7 +34,7 @@ async function screenProducts(cands) {
   if (!enabled() || !cands.length) return null;
   const list = cands.map((c, i) => `${i}. [${c.platform}] ${String(c.caption || '').replace(/\s+/g, ' ').slice(0, 280)}`).join('\n');
   const out = await ask(`You screen social videos for a US dropshipper. For each caption below decide if the video is mainly showing ONE specific physical product someone could buy and dropship (gadget, pet item, baby item, decor, accessory, toy, etc).
-NOT products: food/restaurant deals, apps, services, vlogs, courses, "make money" content, makeup tutorials with many items, hauls of many unrelated items, memes.
+NOT products: big-brand retail/insurance/telecom ads (Macy's, Liberty Mutual, etc), food/restaurant deals, apps, services, vlogs, courses, "make money" content, makeup tutorials with many items, hauls of many unrelated items, memes.
 
 Captions:
 ${list}

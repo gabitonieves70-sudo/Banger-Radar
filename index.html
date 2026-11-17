@@ -93,7 +93,8 @@ header{position:sticky;top:0;z-index:20;background:rgba(10,11,15,.88);backdrop-f
 .cacts .btn{flex:1;justify-content:center}
 .star.on{color:var(--hot2)}
 .empty{grid-column:1/-1;text-align:center;color:var(--dim);padding:60px 20px;background:var(--s1);border:1px dashed var(--line);border-radius:var(--r)}
-.empty b{display:block;color:var(--text);font-size:16px;margin-bottom:6px}
+.empty>b:first-child{display:block;color:var(--text);font-size:16px;margin-bottom:6px}
+.empty b{color:var(--text)}
 
 /* drawer */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;opacity:0;pointer-events:none;transition:.2s}

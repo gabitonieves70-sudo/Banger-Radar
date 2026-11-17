@@ -97,7 +97,7 @@ async function scan() {
   }), log) : Promise.resolve([]);
 
   const adTask = S.sources.facebookAds && S.adKeywords.length ? settle('Facebook ads', runActor('apify/facebook-ads-scraper', {
-    startUrls: S.adKeywords.map(k => ({ url: `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=video&q=${encodeURIComponent(k)}&search_type=keyword_unordered` })),
+    startUrls: S.adKeywords.map(k => ({ url: `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=video&q=${encodeURIComponent(k)}&search_type=keyword_unordered&start_date[min]=${minDate}&start_date[max]=` })),
     resultsLimit: S.adsPerKeyword * S.adKeywords.length, activeStatus: 'active', onlyAdsNewerThan: `${S.maxAgeDays} days`
   }), log) : Promise.resolve([]);
 
